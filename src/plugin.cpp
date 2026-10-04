@@ -2,6 +2,8 @@
 
 #include "plugin.h"
 #include "runner.h"
+#include "subpluginloader.h"
+#include "systemsettings.h"
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusMessage>
@@ -18,6 +20,34 @@ using namespace albert;
 using namespace std;
 
 Plugin::Plugin()
+{
+    addSystemSettings();
+    addRunners();
+}
+
+void Plugin::addSystemSettings()
+{
+    const auto &provider = loader().metadata();
+    PluginMetadata md;
+    md.iid = provider.iid;
+    md.id = u"kdebridge.systemsettings"_s;
+    md.version = provider.version;
+    md.name = u"KDE System Settings"_s;
+    md.description = u"Open System Settings and Info Center pages. Provided by %1."_s
+                         .arg(provider.name);
+    md.license = provider.license;
+    md.authors = provider.authors;
+    md.maintainers = provider.maintainers;
+    md.url = provider.url;
+    md.binary_dependencies = {u"systemsettings"_s};
+    md.load_type = PluginMetadata::LoadType::User;
+
+    loaders_.emplace_back(make_unique<SubPluginLoader>(::move(md), loader().path(), []{
+        return new SystemSettings;
+    }));
+}
+
+void Plugin::addRunners()
 {
     // Earlier locations take precedence, e.g. user files shadow system files.
     QSet<QString> seen_files;
@@ -45,7 +75,10 @@ Plugin::Plugin()
                 }
                 seen_runners.insert(info.plugin_name);
 
-                loaders_.emplace_back(make_unique<RunnerLoader>(::move(info), loader().metadata()));
+                auto md = runnerMetadata(info, loader().metadata());
+                runners_.emplace_back(md.id, info);
+                loaders_.emplace_back(make_unique<SubPluginLoader>(
+                    ::move(md), info.path, [info]{ return new Runner(info); }));
             }
             catch (const exception &e) {
                 WARN << u"%1: %2"_s.arg(file_info.filePath(), QString::fromStdString(e.what()));
@@ -53,7 +86,7 @@ Plugin::Plugin()
         }
     }
 
-    INFO << u"Found %1 KRunner D-Bus runners"_s.arg(loaders_.size());
+    INFO << u"Found %1 KRunner D-Bus runners"_s.arg(runners_.size());
 }
 
 Plugin::~Plugin() = default;
@@ -91,18 +124,26 @@ QWidget *Plugin::buildConfigWidget()
         return tr("<b>not running</b>");
     };
 
-    QString text = tr("<p>Provides the following KRunner D-Bus runners as separate plugins. "
+    auto name = [this](const QString &id) {
+        for (const auto &l : loaders_)
+            if (l->metadata().id == id)
+                return l->metadata().name;
+        return id;
+    };
+
+    QString text = tr("<p>Provides the following plugins. "
                       "Enable them and configure their triggers in the plugin list.</p>");
+
+    text += tr("<p><b>Built-in</b></p>");
+    text += u"<ul><li><b>%1</b> (<code>kdebridge.systemsettings</code>)</li></ul>"_s
+                .arg(name(u"kdebridge.systemsettings"_s).toHtmlEscaped());
+
+    text += tr("<p><b>KRunner D-Bus runners</b></p>");
     text += u"<ul>"_s;
-    for (const auto &loader : loaders_)
-    {
-        const auto &info = loader->info();
+    for (const auto &[id, info] : runners_)
         text += u"<li><b>%1</b> (<code>%2</code>)<br/>%3 &ndash; %4</li>"_s
-                    .arg(loader->metadata().name.toHtmlEscaped(),
-                         loader->metadata().id.toHtmlEscaped(),
-                         info.service.toHtmlEscaped(),
-                         status(info.service));
-    }
+                    .arg(name(id).toHtmlEscaped(), id.toHtmlEscaped(),
+                         info.service.toHtmlEscaped(), status(info.service));
     text += u"</ul>"_s;
 
     auto *w = new QWidget;

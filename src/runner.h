@@ -7,9 +7,7 @@
 #include <atomic>
 #include <albert/extensionplugin.h>
 #include <albert/globalqueryhandler.h>
-#include <albert/pluginloader.h>
 #include <albert/pluginmetadata.h>
-#include <memory>
 
 ///
 /// Runner definition parsed from a KRunner D-Bus plugin desktop file.
@@ -33,30 +31,9 @@ struct RunnerInfo
     bool request_actions_once = false;
 };
 
-class Runner;
-
-class RunnerLoader : public albert::PluginLoader
-{
-public:
-
-    RunnerLoader(RunnerInfo info, const albert::PluginMetadata &provider);
-    ~RunnerLoader() override;
-
-    QString path() const override;
-    const albert::PluginMetadata &metadata() const override;
-    void load() override;
-    void unload() override;
-    albert::PluginInstance *instance() override;
-
-    const RunnerInfo &info() const;
-
-private:
-
-    RunnerInfo info_;
-    albert::PluginMetadata metadata_;
-    std::unique_ptr<Runner> instance_;
-
-};
+/// Returns the metadata of the plugin providing _info_.
+albert::PluginMetadata runnerMetadata(const RunnerInfo &info,
+                                      const albert::PluginMetadata &provider);
 
 class Runner : public albert::ExtensionPlugin,
                public albert::GlobalQueryHandler

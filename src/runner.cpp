@@ -175,6 +175,7 @@ RunnerInfo RunnerInfo::fromDesktopFile(const QString &path)
         throw runtime_error("Unsupported X-Plasma-API: " + api.toStdString());
 
     info.plugin_name = get(u"X-KDE-PluginInfo-Name"_s, QFileInfo(path).completeBaseName());
+    info.plugin_name.remove(QRegularExpression(u"^org\\.kde\\."_s));  // e.g. org.kde.activities2
     info.name = getLocale(u"Name"_s, info.plugin_name);
     info.description = getLocale(u"Comment"_s);
     info.icon = get(u"Icon"_s, u"plasma-search"_s);
@@ -189,43 +190,24 @@ RunnerInfo RunnerInfo::fromDesktopFile(const QString &path)
 
 // -------------------------------------------------------------------------------------------------
 
-RunnerLoader::RunnerLoader(RunnerInfo info, const PluginMetadata &provider) : info_(::move(info))
+PluginMetadata runnerMetadata(const RunnerInfo &info, const PluginMetadata &provider)
 {
-    metadata_.iid = QString::fromLatin1(ALBERT_PLUGIN_IID);
-    metadata_.id = u"kdebridge."_s + info_.plugin_name;
-    metadata_.version = info_.version;
-    metadata_.name = u"KDE "_s + info_.name;
-    metadata_.description = info_.description.isEmpty()
-                                ? u"Provided by %1."_s.arg(provider.name)
-                                : u"%1. Provided by %2."_s.arg(info_.description, provider.name);
-    metadata_.license = info_.license;
-    if (!info_.author.isEmpty())
-        metadata_.authors << info_.author;
-    metadata_.maintainers = provider.maintainers;
-    metadata_.url = provider.url;
-    metadata_.load_type = PluginMetadata::LoadType::User;
+    PluginMetadata md;
+    md.iid = QString::fromLatin1(ALBERT_PLUGIN_IID);
+    md.id = u"kdebridge."_s + info.plugin_name;
+    md.version = info.version;
+    md.name = u"KDE "_s + info.name;
+    md.description = info.description.isEmpty()
+                         ? u"Provided by %1."_s.arg(provider.name)
+                         : u"%1. Provided by %2."_s.arg(info.description, provider.name);
+    md.license = info.license;
+    if (!info.author.isEmpty())
+        md.authors << info.author;
+    md.maintainers = provider.maintainers;
+    md.url = provider.url;
+    md.load_type = PluginMetadata::LoadType::User;
+    return md;
 }
-
-RunnerLoader::~RunnerLoader() = default;
-
-QString RunnerLoader::path() const { return info_.path; }
-
-const RunnerInfo &RunnerLoader::info() const { return info_; }
-
-const PluginMetadata &RunnerLoader::metadata() const { return metadata_; }
-
-void RunnerLoader::load()
-{
-    current_loader = this;
-    instance_ = make_unique<Runner>(info_);
-
-    // Loading is expected to be asynchronous
-    QTimer::singleShot(0, this, [this]{ emit finished({}); });
-}
-
-void RunnerLoader::unload() { instance_.reset(); }
-
-PluginInstance *RunnerLoader::instance() { return instance_.get(); }
 
 // -------------------------------------------------------------------------------------------------
 

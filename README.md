@@ -4,6 +4,10 @@ Albert plugin that brings KDE Plasma services to Albert.
 
 It talks directly to the services that implement the KRunner D-Bus interface (`org.kde.krunner1`), e.g. KWin, the Plasma browser integration or Baloo. KRunner itself is not needed. Every runner found in `krunner/dbusplugins` shows up as its own plugin (`kdebridge.<runner>`) and can be enabled, disabled and triggered like any other Albert plugin.
 
+Built-in plugins:
+
+- System Settings: search and open System Settings and Info Center pages by name or keyword, e.g. `hdmi` opens the display configuration.
+
 On top of what the runners provide, the bridge adds some actions:
 
 - Windows: bring here (current desktop and screen), toggle on all desktops, send to desktop, close, minimize, toggle maximized, fullscreen and keep above. Each action can be disabled in the plugin settings.
