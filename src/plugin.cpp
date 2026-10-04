@@ -3,7 +3,9 @@
 #include "plugin.h"
 #include "runner.h"
 #include "subpluginloader.h"
+#include "klipper.h"
 #include "quicksettings.h"
+#include "spectacle.h"
 #include "systemsettings.h"
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
@@ -24,6 +26,8 @@ Plugin::Plugin()
 {
     addSystemSettings();
     addQuickSettings();
+    addKlipper();
+    addSpectacle();
     addRunners();
 }
 
@@ -60,10 +64,31 @@ void Plugin::addQuickSettings()
 {
     auto md = builtinMetadata(u"quicksettings"_s, u"KDE Quick Settings"_s,
                               u"Toggle night light, do not disturb, power profile, brightness, "
-                              u"Wi-Fi, touchpad and the color scheme"_s);
+                              u"Wi-Fi, touchpad, color scheme and audio"_s);
     builtins_ << md.id;
     loaders_.emplace_back(make_unique<SubPluginLoader>(::move(md), loader().path(), []{
         return new QuickSettings;
+    }));
+}
+
+void Plugin::addKlipper()
+{
+    auto md = builtinMetadata(u"klipper"_s, u"KDE Clipboard"_s,
+                              u"Search and paste from the Plasma clipboard history"_s);
+    builtins_ << md.id;
+    loaders_.emplace_back(make_unique<SubPluginLoader>(::move(md), loader().path(), []{
+        return new Klipper;
+    }));
+}
+
+void Plugin::addSpectacle()
+{
+    auto md = builtinMetadata(u"spectacle"_s, u"KDE Screenshot"_s,
+                              u"Take screenshots and screen recordings using Spectacle"_s);
+    md.binary_dependencies = {u"spectacle"_s};
+    builtins_ << md.id;
+    loaders_.emplace_back(make_unique<SubPluginLoader>(::move(md), loader().path(), []{
+        return new Spectacle;
     }));
 }
 

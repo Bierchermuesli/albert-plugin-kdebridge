@@ -28,6 +28,8 @@ private:
                                            const QString &description) const;
     void addSystemSettings();
     void addQuickSettings();
+    void addKlipper();
+    void addSpectacle();
     void addRunners();
 
     std::vector<std::unique_ptr<SubPluginLoader>> loaders_;
