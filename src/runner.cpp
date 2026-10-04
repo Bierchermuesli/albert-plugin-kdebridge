@@ -379,6 +379,10 @@ vector<RankItem> Runner::rankItems(QueryContext &ctx)
 
         const auto actions = remoteActions(service);
 
+        // Windows and tabs exist already, everything else gets opened
+        const auto default_action_text = is_windows_runner_ || is_browser_tabs_runner_
+                                             ? u"Switch to"_s : u"Open"_s;
+
         const uint window_actions = is_windows_runner_ ? window_actions_.load() : 0;
         const auto desktops = window_actions & kwin::SendToDesktop ? kwin::desktops()
                                                                    : vector<kwin::Desktop>{};
@@ -390,7 +394,7 @@ vector<RankItem> Runner::rankItems(QueryContext &ctx)
 
             vector<Action> item_actions;
             item_actions.push_back({
-                u"run"_s, u"Activate"_s,
+                u"run"_s, default_action_text,
                 [service, path=info_.object_path, mid=m.id]{ run(service, path, mid, {}); }
             });
 
