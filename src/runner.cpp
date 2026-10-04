@@ -6,6 +6,7 @@
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusMessage>
+#include <QFile>
 #include <QFileInfo>
 #include <QCheckBox>
 #include <QImage>
@@ -244,6 +245,9 @@ QWidget *Runner::buildConfigWidget()
     if (info_.plugin_name == u"baloosearch"_s)
         return buildBalooConfigWidget();
 
+    if (info_.plugin_name == u"krunner-keepassxc"_s)
+        return buildKeePassXCConfigWidget();
+
     if (!is_windows_runner_)
         return nullptr;
 
@@ -302,6 +306,18 @@ QStringList Runner::services() const
     return services;
 }
 
+static QWidget *textWidget(const QString &html)
+{
+    auto *w = new QWidget;
+    auto *l = new QVBoxLayout(w);
+    auto *label = new QLabel(html, w);
+    label->setWordWrap(true);
+    label->setTextFormat(Qt::RichText);
+    l->addWidget(label);
+    l->addStretch();
+    return w;
+}
+
 QWidget *Runner::buildBalooConfigWidget()
 {
     // The file indexer daemon registers this service while indexing is enabled
@@ -317,14 +333,41 @@ another file indexer or the Albert file plugin, it would only duplicate results.
         : u"<p><b>Warning:</b> Baloo file indexing is <b>not running</b> on this system, this "
           u"plugin will not find any files. Enable it in System Settings &rarr; File Search.</p>"_s;
 
-    auto *w = new QWidget;
-    auto *l = new QVBoxLayout(w);
-    auto *label = new QLabel(text, w);
-    label->setWordWrap(true);
-    label->setTextFormat(Qt::RichText);
-    l->addWidget(label);
-    l->addStretch();
-    return w;
+    return textWidget(text);
+}
+
+QWidget *Runner::buildKeePassXCConfigWidget()
+{
+    // The runner reads the entries via the Secret Service, which has to be provided by KeePassXC
+    QString provider;
+    if (const auto *iface = QDBusConnection::sessionBus().interface())
+        if (const auto pid = iface->servicePid(u"org.freedesktop.secrets"_s); pid.isValid())
+            if (QFile comm(u"/proc/%1/comm"_s.arg(pid.value())); comm.open(QIODevice::ReadOnly))
+                provider = QString::fromUtf8(comm.readAll()).trimmed();
+
+    auto text = uR"(
+<p>Copies passwords of KeePassXC entries to the clipboard. The runner reads the entries via the
+Secret Service, which has to be provided by KeePassXC:</p>
+<ol>
+<li>KeePassXC: Settings &rarr; Secret Service Integration &rarr; enable it and select the
+exposed groups in the database settings.</li>
+<li>System Settings &rarr; KDE Wallet: disable <i>Use KWallet for the Secret Service
+interface</i>.</li>
+<li>Log out and in again.</li>
+</ol>
+<p>Note: Applications storing secrets via the Secret Service (e.g. browsers) will then use
+KeePassXC instead of KWallet. Existing KWallet entries are not migrated.</p>
+)"_s;
+
+    if (provider.isEmpty())
+        text += u"<p><b>Warning:</b> No Secret Service is running.</p>"_s;
+    else if (provider.startsWith(u"keepassxc"_s))
+        text += u"<p>The Secret Service is provided by <b>KeePassXC</b>.</p>"_s;
+    else
+        text += u"<p><b>Warning:</b> The Secret Service is provided by <b>%1</b>, "
+                u"not KeePassXC. This plugin will not work.</p>"_s.arg(provider.toHtmlEscaped());
+
+    return textWidget(text);
 }
 
 vector<Runner::RemoteAction> Runner::remoteActions(const QString &service)
