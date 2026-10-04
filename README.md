@@ -16,5 +16,5 @@ The plugin is built as part of the Albert source tree. Clone it into `plugins/kd
 
 ## Notes
 
-- Global queries use a short timeout, slow runners like the browser history only show up when triggered, e.g. `browserhistory <query>`.
+- Global queries use a short timeout. The browser history is too slow for it and therefore excluded from the global query by default, use the trigger instead, e.g. `browserhistory <query>`.
 - The window actions use KWin scripting via D-Bus.

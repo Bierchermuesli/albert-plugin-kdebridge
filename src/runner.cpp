@@ -35,6 +35,9 @@ static const int global_match_timeout_ms = 200;
 static const int triggered_match_timeout_ms = 3000;
 static const int actions_timeout_ms = 500;
 
+// Runners that are too slow for the global query, i.e. exceed global_match_timeout_ms
+static const QStringList slow_runners{u"browserhistory"_s};
+
 // Time the browser needs to activate a tab and update its window caption
 static const int browser_tab_activation_delay_ms = 400;
 
@@ -235,6 +238,12 @@ Runner::Runner(const RunnerInfo &info) :
                             && info.object_path == u"/TabsRunner"_s),
     window_actions_(kwin::AllWindowActions)
 {
+    // Slow runners would stall the global query. Exclude them from it by default. The key is
+    // read by the core, so only set it if the user has not decided yet.
+    if (slow_runners.contains(info_.plugin_name))
+        if (auto s = settings(); !s->contains(u"global_handler_enabled"_s))
+            s->setValue(u"global_handler_enabled"_s, false);
+
     if (is_windows_runner_)
     {
         const auto s = settings();
