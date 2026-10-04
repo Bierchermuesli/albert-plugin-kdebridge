@@ -55,6 +55,7 @@ private:
         QString icon;
     };
 
+    QWidget *buildBalooConfigWidget();
     QStringList services() const;
     std::vector<RemoteAction> remoteActions(const QString &service);
     static void run(const QString &service, const QString &object_path,

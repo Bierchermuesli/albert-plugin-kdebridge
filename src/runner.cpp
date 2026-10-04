@@ -200,6 +200,8 @@ PluginMetadata runnerMetadata(const RunnerInfo &info, const PluginMetadata &prov
     md.description = info.description.isEmpty()
                          ? u"Provided by %1."_s.arg(provider.name)
                          : u"%1. Provided by %2."_s.arg(info.description, provider.name);
+    if (info.plugin_name == u"baloosearch"_s)
+        md.description += u" Requires Baloo file indexing."_s;
     md.license = info.license;
     if (!info.author.isEmpty())
         md.authors << info.author;
@@ -239,6 +241,9 @@ Runner::Runner(const RunnerInfo &info) :
 
 QWidget *Runner::buildConfigWidget()
 {
+    if (info_.plugin_name == u"baloosearch"_s)
+        return buildBalooConfigWidget();
+
     if (!is_windows_runner_)
         return nullptr;
 
@@ -264,7 +269,19 @@ QWidget *Runner::buildConfigWidget()
     return w;
 }
 
-QString Runner::defaultTrigger() const { return info_.plugin_name + u' '; }
+QString Runner::defaultTrigger() const
+{
+    // Short triggers for known runners
+    static const QHash<QString, QString> triggers{
+        {u"windows"_s, u"win "_s},
+        {u"browsertabs"_s, u"tabs "_s},
+        {u"browserhistory"_s, u"history "_s},
+        {u"baloosearch"_s, u"baloo "_s},
+        {u"activities2"_s, u"activities "_s},
+        {u"krunner-keepassxc"_s, u"keepass "_s},
+    };
+    return triggers.value(info_.plugin_name, info_.plugin_name + u' ');
+}
 
 QStringList Runner::services() const
 {
@@ -283,6 +300,31 @@ QStringList Runner::services() const
                 services << name;
     }
     return services;
+}
+
+QWidget *Runner::buildBalooConfigWidget()
+{
+    // The file indexer daemon registers this service while indexing is enabled
+    const auto *iface = QDBusConnection::sessionBus().interface();
+    const bool indexing = iface && iface->isServiceRegistered(u"org.kde.baloo"_s).value();
+
+    auto text = uR"(
+<p>Searches files using Baloo, the file indexer of KDE Plasma. This makes no sense if you use
+another file indexer or the Albert file plugin, it would only duplicate results.</p>
+)"_s;
+    text += indexing
+        ? u"<p>Baloo file indexing is <b>enabled</b> on this system.</p>"_s
+        : u"<p><b>Warning:</b> Baloo file indexing is <b>not running</b> on this system, this "
+          u"plugin will not find any files. Enable it in System Settings &rarr; File Search.</p>"_s;
+
+    auto *w = new QWidget;
+    auto *l = new QVBoxLayout(w);
+    auto *label = new QLabel(text, w);
+    label->setWordWrap(true);
+    label->setTextFormat(Qt::RichText);
+    l->addWidget(label);
+    l->addStretch();
+    return w;
 }
 
 vector<Runner::RemoteAction> Runner::remoteActions(const QString &service)
