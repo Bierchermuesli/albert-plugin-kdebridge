@@ -13,6 +13,7 @@ class SystemSettings : public albert::ExtensionPlugin,
 public:
 
     QString defaultTrigger() const override;
+    QWidget *buildConfigWidget() override;
     void updateIndexItems() override;
 
 };

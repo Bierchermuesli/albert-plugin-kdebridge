@@ -4,11 +4,13 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QJsonArray>
+#include <QLabel>
 #include <QJsonObject>
 #include <QLocale>
 #include <QPluginLoader>
 #include <QSet>
 #include <QStandardPaths>
+#include <QVBoxLayout>
 #include <albert/icon.h>
 #include <albert/indexitem.h>
 #include <albert/logging.h>
@@ -124,6 +126,28 @@ vector<Kcm> scanKcms()
 }  // namespace
 
 QString SystemSettings::defaultTrigger() const { return u"settings "_s; }
+
+QWidget *SystemSettings::buildConfigWidget()
+{
+    auto *w = new QWidget;
+    auto *l = new QVBoxLayout(w);
+    auto *label = new QLabel(uR"(
+<p>Opens the pages of System Settings and Info Center. Search them by name or by the keywords
+KDE provides for each page, in your language and in English. For example:</p>
+<ul>
+<li><code>hdmi</code>, <code>resolution</code>, <code>brightness</code> &rarr; Display Configuration</li>
+<li><code>bluetooth</code> &rarr; Bluetooth</li>
+<li><code>wallpaper</code> &rarr; Wallpaper</li>
+<li><code>cpu</code>, <code>memory</code> &rarr; Info Center pages</li>
+</ul>
+<p>Pages that are not available on the current platform, e.g. X11 only, are hidden.</p>
+)"_s, w);
+    label->setWordWrap(true);
+    label->setTextFormat(Qt::RichText);
+    l->addWidget(label);
+    l->addStretch();
+    return w;
+}
 
 void SystemSettings::updateIndexItems()
 {

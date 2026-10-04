@@ -33,7 +33,7 @@ void Plugin::addSystemSettings()
     md.id = u"kdebridge.systemsettings"_s;
     md.version = provider.version;
     md.name = u"KDE System Settings"_s;
-    md.description = u"Open System Settings and Info Center pages. Provided by %1."_s
+    md.description = u"Search System Settings pages by name or keyword. Provided by %1."_s
                          .arg(provider.name);
     md.license = provider.license;
     md.authors = provider.authors;
