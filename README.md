@@ -7,6 +7,7 @@ It talks directly to the services that implement the KRunner D-Bus interface (`o
 Built-in plugins:
 
 - System Settings: search and open System Settings and Info Center pages by name or keyword, e.g. `hdmi` opens the display configuration.
+- Quick Settings: show and change night light, do not disturb, power profile, screen and keyboard brightness, Wi-Fi, touchpad and the color scheme, e.g. `dnd`, `power` or `brightness 40`.
 
 On top of what the runners provide, the bridge adds some actions:
 
@@ -22,3 +23,4 @@ The plugin is built as part of the Albert source tree. Clone it into `plugins/kd
 
 - Global queries use a short timeout. The browser history is too slow for it and therefore excluded from the global query by default, use the trigger instead, e.g. `browserhistory <query>`.
 - The window actions use KWin scripting via D-Bus.
+- File search requires Baloo file indexing. Do not enable it if you use another file indexer.

@@ -3,6 +3,7 @@
 #pragma once
 #include "runner.h"
 #include <albert/extensionplugin.h>
+#include <albert/pluginmetadata.h>
 #include <albert/pluginprovider.h>
 #include <memory>
 #include <vector>
@@ -23,10 +24,14 @@ public:
 
 private:
 
+    albert::PluginMetadata builtinMetadata(const QString &id, const QString &name,
+                                           const QString &description) const;
     void addSystemSettings();
+    void addQuickSettings();
     void addRunners();
 
     std::vector<std::unique_ptr<SubPluginLoader>> loaders_;
+    QStringList builtins_;  // plugin ids
     std::vector<std::pair<QString, RunnerInfo>> runners_;  // plugin id, info
 
 };

@@ -3,6 +3,7 @@
 #include "plugin.h"
 #include "runner.h"
 #include "subpluginloader.h"
+#include "quicksettings.h"
 #include "systemsettings.h"
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
@@ -22,28 +23,47 @@ using namespace std;
 Plugin::Plugin()
 {
     addSystemSettings();
+    addQuickSettings();
     addRunners();
 }
 
-void Plugin::addSystemSettings()
+PluginMetadata Plugin::builtinMetadata(const QString &id, const QString &name,
+                                       const QString &description) const
 {
     const auto &provider = loader().metadata();
     PluginMetadata md;
     md.iid = provider.iid;
-    md.id = u"kdebridge.systemsettings"_s;
+    md.id = u"kdebridge."_s + id;
     md.version = provider.version;
-    md.name = u"KDE System Settings"_s;
-    md.description = u"Search System Settings pages by name or keyword. Provided by %1."_s
-                         .arg(provider.name);
+    md.name = name;
+    md.description = u"%1. Provided by %2."_s.arg(description, provider.name);
     md.license = provider.license;
     md.authors = provider.authors;
     md.maintainers = provider.maintainers;
     md.url = provider.url;
-    md.binary_dependencies = {u"systemsettings"_s};
     md.load_type = PluginMetadata::LoadType::User;
+    return md;
+}
 
+void Plugin::addSystemSettings()
+{
+    auto md = builtinMetadata(u"systemsettings"_s, u"KDE System Settings"_s,
+                              u"Search System Settings pages by name or keyword"_s);
+    md.binary_dependencies = {u"systemsettings"_s};
+    builtins_ << md.id;
     loaders_.emplace_back(make_unique<SubPluginLoader>(::move(md), loader().path(), []{
         return new SystemSettings;
+    }));
+}
+
+void Plugin::addQuickSettings()
+{
+    auto md = builtinMetadata(u"quicksettings"_s, u"KDE Quick Settings"_s,
+                              u"Toggle night light, do not disturb, power profile, brightness, "
+                              u"Wi-Fi, touchpad and the color scheme"_s);
+    builtins_ << md.id;
+    loaders_.emplace_back(make_unique<SubPluginLoader>(::move(md), loader().path(), []{
+        return new QuickSettings;
     }));
 }
 
@@ -135,8 +155,11 @@ QWidget *Plugin::buildConfigWidget()
                       "Enable them and configure their triggers in the plugin list.</p>");
 
     text += tr("<p><b>Built-in</b></p>");
-    text += u"<ul><li><b>%1</b> (<code>kdebridge.systemsettings</code>)</li></ul>"_s
-                .arg(name(u"kdebridge.systemsettings"_s).toHtmlEscaped());
+    text += u"<ul>"_s;
+    for (const auto &id : builtins_)
+        text += u"<li><b>%1</b> (<code>%2</code>)</li>"_s
+                    .arg(name(id).toHtmlEscaped(), id.toHtmlEscaped());
+    text += u"</ul>"_s;
 
     text += tr("<p><b>KRunner D-Bus runners</b></p>");
     text += u"<ul>"_s;
