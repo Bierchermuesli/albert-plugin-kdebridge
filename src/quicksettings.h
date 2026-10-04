@@ -24,7 +24,10 @@ public:
         Wifi               = 1 << 5,
         Touchpad           = 1 << 6,
         ColorScheme        = 1 << 7,
-        AllSettings        = 0xFF
+        AudioOutput        = 1 << 8,
+        AudioMute          = 1 << 9,
+        MicrophoneMute     = 1 << 10,
+        AllSettings        = 0x7FF
     };
 
     QuickSettings();

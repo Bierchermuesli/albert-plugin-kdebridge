@@ -7,6 +7,9 @@
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusVariant>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QMutex>
 #include <QMutexLocker>
@@ -20,11 +23,13 @@
 #include <albert/querycontext.h>
 #include <albert/standarditem.h>
 #include <albert/systemutil.h>
+#include <chrono>
 #include <cmath>
 #include <optional>
 using namespace Qt::StringLiterals;
 using namespace albert;
 using namespace std;
+using namespace std::chrono_literals;
 
 struct QuickSettings::Inhibitions
 {
@@ -79,6 +84,12 @@ const vector<SettingInfo> &settingInfos()
          {u"touchpad"_s, u"trackpad"_s}},
         {QuickSettings::ColorScheme, u"color_scheme"_s, u"Color Scheme"_s,
          {u"dark"_s, u"light"_s, u"dark mode"_s, u"theme"_s, u"colors"_s}},
+        {QuickSettings::AudioOutput, u"audio_output"_s, u"Audio Output"_s,
+         {u"audio"_s, u"sound"_s, u"output"_s, u"speaker"_s, u"headphones"_s, u"hdmi"_s}},
+        {QuickSettings::AudioMute, u"audio_mute"_s, u"Mute Audio"_s,
+         {u"mute"_s, u"audio"_s, u"sound"_s, u"volume"_s}},
+        {QuickSettings::MicrophoneMute, u"microphone_mute"_s, u"Mute Microphone"_s,
+         {u"mic"_s, u"microphone"_s, u"mute"_s}},
     };
     return infos;
 }
@@ -532,6 +543,162 @@ shared_ptr<Item> colorSchemeItem()
                     u"preferences-desktop-color"_s, ::move(actions));
 }
 
+// -------------------------------------------------------------------------------------------------
+
+/// Runs pactl and returns its stdout. Works with PulseAudio and PipeWire.
+QByteArray pactl(const QStringList &args)
+{
+    QProcess process;
+    process.start(u"pactl"_s, args);
+    if (!process.waitForFinished(1000) || process.exitCode() != 0)
+        return {};
+    return process.readAllStandardOutput();
+}
+
+struct Sink
+{
+    QString name;
+    QString description;
+};
+
+/// Returns the default sink and the sinks that can be used, i.e. have an available port.
+pair<QString, vector<Sink>> fetchSinks()
+{
+    const auto default_sink = QString::fromUtf8(pactl({u"get-default-sink"_s})).trimmed();
+
+    vector<Sink> sinks;
+    const auto doc = QJsonDocument::fromJson(pactl({u"-f"_s, u"json"_s, u"list"_s, u"sinks"_s}));
+    for (const auto &value : doc.array())
+    {
+        const auto sink = value.toObject();
+        const auto name = sink.value(u"name"_s).toString();
+
+        // Ports without a plugged in device are "not available", e.g. headphones
+        const auto ports = sink.value(u"ports"_s).toArray();
+        const bool available = ports.isEmpty()
+            || any_of(ports.begin(), ports.end(), [](const QJsonValue &port) {
+                   return port.toObject().value(u"availability"_s).toString()
+                          != u"not available"_s;
+               });
+
+        if (available || name == default_sink)
+            sinks.push_back({name, sink.value(u"description"_s).toString()});
+    }
+
+    // Strip the common prefix of the descriptions, e.g. the name of the sound card
+    if (sinks.size() > 1)
+    {
+        auto prefix = sinks.front().description;
+        for (const auto &sink : sinks)
+            while (!sink.description.startsWith(prefix))
+                prefix.chop(1);
+        prefix = prefix.left(prefix.lastIndexOf(u' ') + 1);
+        if (!prefix.isEmpty())
+            for (auto &sink : sinks)
+                sink.description = sink.description.mid(prefix.size());
+    }
+
+    return {default_sink, sinks};
+}
+
+// Sinks are matched on every global query. Cache them to not spawn processes on each keystroke.
+QMutex sinks_mutex;
+optional<pair<QString, vector<Sink>>> sinks_cache;
+chrono::steady_clock::time_point sinks_cache_time;
+
+pair<QString, vector<Sink>> sinks()
+{
+    QMutexLocker locker(&sinks_mutex);
+    if (!sinks_cache || chrono::steady_clock::now() - sinks_cache_time > 5s)
+    {
+        sinks_cache = fetchSinks();
+        sinks_cache_time = chrono::steady_clock::now();
+    }
+    return *sinks_cache;
+}
+
+void invalidateSinks()
+{
+    QMutexLocker locker(&sinks_mutex);
+    sinks_cache.reset();
+}
+
+Action switchSinkAction(const Sink &sink)
+{
+    return {u"sink."_s + sink.name, u"Switch to %1"_s.arg(sink.description),
+            [name = sink.name]{
+                runDetachedProcess({u"pactl"_s, u"set-default-sink"_s, name});
+                invalidateSinks();
+            }};
+}
+
+/// Returns the audio output item and items to switch to sinks matching _matcher_.
+vector<RankItem> audioOutputItems(const Matcher &matcher, double score)
+{
+    const auto [default_sink, all_sinks] = sinks();
+    if (all_sinks.empty())
+        return {};
+
+    QString current = default_sink;
+    vector<Action> actions;
+    vector<RankItem> items;
+    for (const auto &sink : all_sinks)
+    {
+        if (sink.name == default_sink)
+        {
+            current = sink.description;
+            continue;
+        }
+
+        actions.push_back(switchSinkAction(sink));
+
+        // E.g. "headphones" offers switching directly
+        if (const auto m = matcher.match(sink.description); m && !matcher.string().isEmpty())
+            items.emplace_back(makeItem(u"sink."_s + sink.name,
+                                        u"Switch Audio Output to %1"_s.arg(sink.description),
+                                        u"Current: %1"_s.arg(current), u"audio-card"_s,
+                                        {switchSinkAction(sink)}),
+                               m.score());
+    }
+    actions.push_back(openSettings(u"kcm_pulseaudio"_s));
+
+    if (score >= 0)
+        items.emplace_back(makeItem(u"audiooutput"_s, u"Audio Output"_s,
+                                    u"Current: %1"_s.arg(current), u"audio-card"_s,
+                                    ::move(actions)),
+                           score);
+    return items;
+}
+
+shared_ptr<Item> muteItem(bool microphone)
+{
+    const auto device = microphone ? u"@DEFAULT_SOURCE@"_s : u"@DEFAULT_SINK@"_s;
+    const auto output = QString::fromUtf8(
+        pactl({microphone ? u"get-source-mute"_s : u"get-sink-mute"_s, device})).trimmed();
+    if (output.isEmpty())
+        return {};
+
+    const bool muted = output.endsWith(u"yes"_s);  // "Mute: yes"
+    const auto name = microphone ? u"Microphone"_s : u"Audio"_s;
+    return makeItem(
+        microphone ? u"micmute"_s : u"audiomute"_s,
+        u"Mute %1"_s.arg(name),
+        muted ? u"Muted"_s : u"Not muted"_s,
+        microphone ? (muted ? u"microphone-sensitivity-muted"_s : u"audio-input-microphone"_s)
+                   : (muted ? u"audio-volume-muted"_s : u"audio-volume-high"_s),
+        {
+            {
+                u"toggle"_s, muted ? u"Unmute"_s : u"Mute"_s,
+                [microphone, device]{
+                    runDetachedProcess({u"pactl"_s,
+                                        microphone ? u"set-source-mute"_s : u"set-sink-mute"_s,
+                                        device, u"toggle"_s});
+                }
+            },
+            openSettings(u"kcm_pulseaudio"_s)
+        });
+}
+
 }  // namespace
 
 // -------------------------------------------------------------------------------------------------
@@ -565,7 +732,8 @@ QWidget *QuickSettings::buildConfigWidget()
     auto *label = new QLabel(uR"(
 <p>Shows the current state of Plasma quick settings and changes them. Enter applies the most
 likely change, the alternative actions offer the other options. Search by name or keyword, e.g.
-<code>night</code>, <code>dnd</code>, <code>power</code>, <code>wifi</code>, <code>dark</code>.
+<code>night</code>, <code>dnd</code>, <code>power</code>, <code>wifi</code>, <code>dark</code>,
+<code>mic</code> or <code>headphones</code>.
 Set the brightness directly with <code>brightness 40</code>.</p>
 <p>Night light and do not disturb are paused by Albert and resumed when Albert quits.</p>
 )"_s, w);
@@ -617,6 +785,15 @@ vector<RankItem> QuickSettings::rankItems(QueryContext &ctx)
             continue;
 
         const auto match = matcher.match(QStringList{info.name} + info.keywords);
+
+        // Matching sinks are offered even if the audio output setting itself does not match
+        if (info.flag == AudioOutput)
+        {
+            for (auto &rank_item : audioOutputItems(matcher, match ? match.score() : -1.0))
+                results.emplace_back(::move(rank_item));
+            continue;
+        }
+
         if (!match)
             continue;
 
@@ -633,6 +810,8 @@ vector<RankItem> QuickSettings::rankItems(QueryContext &ctx)
         case Wifi:               item = wifiItem(); break;
         case Touchpad:           item = touchpadItem(); break;
         case ColorScheme:        item = colorSchemeItem(); break;
+        case AudioMute:          item = muteItem(false); break;
+        case MicrophoneMute:     item = muteItem(true); break;
         default: break;
         }
 
