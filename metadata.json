@@ -1,0 +1,12 @@
+{
+    "authors": [
+        "@Bierchermuesli"
+    ],
+    "description": "Use KDE Plasma services like windows, browser tabs and file search",
+    "license": "MIT",
+    "maintainers": [
+        "@Bierchermuesli"
+    ],
+    "name": "KDE Bridge",
+    "url": "https://github.com/Bierchermuesli/albert-plugin-kdebridge"
+}
