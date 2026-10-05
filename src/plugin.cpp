@@ -71,7 +71,7 @@ void Plugin::addQuickSettings()
 {
     auto md = builtinMetadata(u"quicksettings"_s, u"KDE Quick Settings"_s,
                               u"Toggle night light, do not disturb, power profile, brightness, "
-                              u"Wi-Fi, touchpad, color scheme and audio"_s);
+                              u"Wi-Fi, touchpad, color scheme, audio and displays"_s);
     builtins_ << md.id;
     loaders_.emplace_back(make_unique<SubPluginLoader>(::move(md), loader().path(), []{
         return new QuickSettings;

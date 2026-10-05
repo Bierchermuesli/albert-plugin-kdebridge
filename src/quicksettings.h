@@ -27,7 +27,10 @@ public:
         AudioOutput        = 1 << 8,
         AudioMute          = 1 << 9,
         MicrophoneMute     = 1 << 10,
-        AllSettings        = 0x7FF
+        DisplayMode        = 1 << 11,
+        DisplayScale       = 1 << 12,
+        ScreensOff         = 1 << 13,
+        AllSettings        = 0x3FFF
     };
 
     QuickSettings();

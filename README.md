@@ -7,7 +7,7 @@ It talks directly to the services that implement the KRunner D-Bus interface (`o
 Built-in plugins:
 
 - System Settings: search and open System Settings and Info Center pages by name or keyword, e.g. `hdmi` opens the display configuration.
-- Quick Settings: show and change night light, do not disturb, power profile, screen and keyboard brightness, Wi-Fi, touchpad, color scheme, audio output and audio/microphone mute, e.g. `dnd`, `power`, `mic`, `headphones` or `brightness 40`.
+- Quick Settings: show and change night light, do not disturb, power profile, screen and keyboard brightness, Wi-Fi, touchpad, color scheme, audio output, audio/microphone mute, display mode and scale and turn off the screens, e.g. `dnd`, `power`, `mic`, `headphones`, `extend` or `brightness 40`.
 - Clipboard: search and paste from the Plasma clipboard history (`clip <filter>`).
 - Screenshot: take screenshots and screen recordings with Spectacle, open them in Spectacle, copy them to the clipboard or save them directly.
 
