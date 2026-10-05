@@ -9,6 +9,7 @@
 #include <QDBusMessage>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QCheckBox>
 #include <QImage>
 #include <QLabel>
@@ -541,9 +542,14 @@ vector<RankItem> Runner::rankItems(QueryContext &ctx)
                     auto icon = makeIcon(image, icon_name, fallback);
                     if (badge.isEmpty())
                         return icon;
-                    // Badge in the bottom right corner
-                    return Icon::composed(::move(icon), Icon::theme(badge),
-                                          0.85, 0.5, 0.0, 0.0, 1.0, 1.0);
+                    // Badge in the bottom right corner. Use the palette for the background,
+                    // the theme draws its glyphs in a color that contrasts with it.
+                    const auto palette = QGuiApplication::palette();
+                    return Icon::composed(::move(icon),
+                                          Icon::iconified(Icon::theme(badge),
+                                                          palette.window(), 0.5, 1,
+                                                          palette.mid()),
+                                          0.8, 0.55, 0.0, 0.0, 1.0, 1.0);
                 },
                 ::move(item_actions));
 
