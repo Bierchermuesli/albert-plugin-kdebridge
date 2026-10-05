@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Stefan Grosser
 
+#include "appearance.h"
 #include "kwin.h"
 #include "runner.h"
 #include <QDBusArgument>
@@ -214,8 +215,25 @@ PluginMetadata runnerMetadata(const RunnerInfo &info, const PluginMetadata &prov
 
 // -------------------------------------------------------------------------------------------------
 
-Runner::Runner(const RunnerInfo &info) :
+// Short label and badge icon of the source, shown to tell results of different sources apart
+static pair<QString, QString> source(const RunnerInfo &info)
+{
+    static const QHash<QString, pair<QString, QString>> sources{
+        {u"windows"_s, {u"Window"_s, u"window"_s}},
+        {u"browsertabs"_s, {u"Tab"_s, u"tab-new"_s}},
+        {u"browserhistory"_s, {u"History"_s, u"view-history"_s}},
+        {u"baloosearch"_s, {u"File"_s, u"system-search"_s}},
+        {u"activities2"_s, {u"Activity"_s, u"activities"_s}},
+        {u"krunner-keepassxc"_s, {u"KeePassXC"_s, u"password-copy"_s}},
+    };
+    return sources.value(info.plugin_name, {info.name, info.icon});
+}
+
+Runner::Runner(const RunnerInfo &info, shared_ptr<const Appearance> appearance) :
     info_(info),
+    appearance_(::move(appearance)),
+    source_label_(source(info).first),
+    source_badge_(source(info).second),
     match_regex_(info.match_regex),
     cache_dir_(QString::fromStdString(cacheLocation().string())),
     is_windows_runner_(kwin::isWindowsRunner(info.service, info.object_path)),
@@ -430,6 +448,9 @@ vector<RankItem> Runner::rankItems(QueryContext &ctx)
     if (!info_.match_regex.isEmpty() && !match_regex_.match(query).hasMatch())
         return results;
 
+    const bool source_subtext = appearance_->source_subtext;
+    const bool source_badge = appearance_->source_badge;
+
     auto bus = QDBusConnection::sessionBus();
     for (const auto &service : services())
     {
@@ -506,12 +527,23 @@ vector<RankItem> Runner::rankItems(QueryContext &ctx)
                         [service, path=info_.object_path, mid=m.id, aid=a.id]{ run(service, path, mid, aid); }
                     });
 
+            QString item_subtext = subtext.isEmpty() ? info_.name : subtext;
+            if (source_subtext)
+                item_subtext = subtext.isEmpty() ? source_label_
+                                                 : u"%1 · %2"_s.arg(source_label_, subtext);
+
             auto item = StandardItem::make(
                 m.id,
                 m.text,
-                subtext.isEmpty() ? info_.name : subtext,
-                [image, icon_name=m.icon_name, fallback=info_.icon]{
-                    return makeIcon(image, icon_name, fallback);
+                item_subtext,
+                [image, icon_name=m.icon_name, fallback=info_.icon,
+                 badge = source_badge ? source_badge_ : QString()]{
+                    auto icon = makeIcon(image, icon_name, fallback);
+                    if (badge.isEmpty())
+                        return icon;
+                    // Badge in the bottom right corner
+                    return Icon::composed(::move(icon), Icon::theme(badge),
+                                          0.85, 0.5, 0.0, 0.0, 1.0, 1.0);
                 },
                 ::move(item_actions));
 

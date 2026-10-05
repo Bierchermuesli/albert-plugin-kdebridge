@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 class SubPluginLoader;
+struct Appearance;
 
 class Plugin : public albert::ExtensionPlugin,
                public albert::PluginProvider
@@ -32,6 +33,7 @@ private:
     void addSpectacle();
     void addRunners();
 
+    std::shared_ptr<Appearance> appearance_;
     std::vector<std::unique_ptr<SubPluginLoader>> loaders_;
     QStringList builtins_;  // plugin ids
     std::vector<std::pair<QString, RunnerInfo>> runners_;  // plugin id, info

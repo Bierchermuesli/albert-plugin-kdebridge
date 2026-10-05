@@ -3,10 +3,12 @@
 #include "plugin.h"
 #include "runner.h"
 #include "subpluginloader.h"
+#include "appearance.h"
 #include "klipper.h"
 #include "quicksettings.h"
 #include "spectacle.h"
 #include "systemsettings.h"
+#include <QCheckBox>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusMessage>
@@ -14,6 +16,7 @@
 #include <QLabel>
 #include <QRegularExpression>
 #include <QSet>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QVBoxLayout>
 #include <albert/logging.h>
@@ -22,8 +25,12 @@ using namespace Qt::StringLiterals;
 using namespace albert;
 using namespace std;
 
-Plugin::Plugin()
+Plugin::Plugin() : appearance_(make_shared<Appearance>())
 {
+    const auto s = settings();
+    appearance_->source_subtext = s->value(u"source_subtext"_s, true).toBool();
+    appearance_->source_badge = s->value(u"source_badge"_s, true).toBool();
+
     addSystemSettings();
     addQuickSettings();
     addKlipper();
@@ -123,7 +130,7 @@ void Plugin::addRunners()
                 auto md = runnerMetadata(info, loader().metadata());
                 runners_.emplace_back(md.id, info);
                 loaders_.emplace_back(make_unique<SubPluginLoader>(
-                    ::move(md), info.path, [info]{ return new Runner(info); }));
+                    ::move(md), info.path, [info, a = appearance_]{ return new Runner(info, a); }));
             }
             catch (const exception &e) {
                 WARN << u"%1: %2"_s.arg(file_info.filePath(), QString::fromStdString(e.what()));
@@ -196,6 +203,22 @@ QWidget *Plugin::buildConfigWidget()
 
     auto *w = new QWidget;
     auto *l = new QVBoxLayout(w);
+
+    // Appearance of the runner results
+    auto addOption = [&](const QString &option, std::atomic<bool> &value, const QString &key) {
+        auto *cb = new QCheckBox(option, w);
+        cb->setChecked(value);
+        connect(cb, &QCheckBox::toggled, w, [this, &value, key](bool checked) {
+            value = checked;
+            settings()->setValue(key, checked);
+        });
+        l->addWidget(cb);
+    };
+    addOption(tr("Show the source in the subtext, e.g. \"Tab · github.com\""),
+              appearance_->source_subtext, u"source_subtext"_s);
+    addOption(tr("Show a badge of the source on the icon"),
+              appearance_->source_badge, u"source_badge"_s);
+
     auto *label = new QLabel(text, w);
     label->setWordWrap(true);
     label->setTextFormat(Qt::RichText);

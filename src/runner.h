@@ -5,6 +5,7 @@
 #include <QMutex>
 #include <QRegularExpression>
 #include <atomic>
+#include <memory>
 #include <albert/extensionplugin.h>
 #include <albert/globalqueryhandler.h>
 #include <albert/pluginmetadata.h>
@@ -35,12 +36,14 @@ struct RunnerInfo
 albert::PluginMetadata runnerMetadata(const RunnerInfo &info,
                                       const albert::PluginMetadata &provider);
 
+struct Appearance;
+
 class Runner : public albert::ExtensionPlugin,
                public albert::GlobalQueryHandler
 {
 public:
 
-    explicit Runner(const RunnerInfo &info);
+    Runner(const RunnerInfo &info, std::shared_ptr<const Appearance> appearance);
 
     QString defaultTrigger() const override;
     QWidget *buildConfigWidget() override;
@@ -63,6 +66,9 @@ private:
                     const QString &match_id, const QString &action_id);
 
     const RunnerInfo info_;
+    const std::shared_ptr<const Appearance> appearance_;
+    const QString source_label_;
+    const QString source_badge_;
     const QRegularExpression match_regex_;
     const QString cache_dir_;
     const bool is_windows_runner_;
