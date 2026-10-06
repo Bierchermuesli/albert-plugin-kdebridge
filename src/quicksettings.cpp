@@ -641,7 +641,7 @@ Action switchSinkAction(const Sink &sink)
 }
 
 /// Returns the audio output item and items to switch to sinks matching _matcher_.
-vector<RankItem> audioOutputItems(const Matcher &matcher, double score)
+vector<RankItem> audioOutputItems(const Matcher &matcher, const QString &query, double score)
 {
     const auto [default_sink, all_sinks] = sinks();
     if (all_sinks.empty())
@@ -661,7 +661,7 @@ vector<RankItem> audioOutputItems(const Matcher &matcher, double score)
         actions.push_back(switchSinkAction(sink));
 
         // E.g. "headphones" offers switching directly
-        if (const auto m = matcher.match(sink.description); m && !matcher.string().isEmpty())
+        if (const auto m = matcher.match(sink.description); m && !query.isEmpty())
             items.emplace_back(makeItem(u"sink."_s + sink.name,
                                         u"Switch Audio Output to %1"_s.arg(sink.description),
                                         u"Current: %1"_s.arg(current), u"audio-card"_s,
@@ -947,7 +947,7 @@ vector<RankItem> QuickSettings::rankItems(QueryContext &ctx)
         // Matching sinks are offered even if the audio output setting itself does not match
         if (info.flag == AudioOutput)
         {
-            for (auto &rank_item : audioOutputItems(matcher, match ? match.score() : -1.0))
+            for (auto &rank_item : audioOutputItems(matcher, ctx.query(), match ? match.score() : -1.0))
                 results.emplace_back(::move(rank_item));
             continue;
         }
