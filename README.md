@@ -88,9 +88,9 @@ Trigger `shot `. Screenshots and screen recordings with Spectacle: region, windo
 
 Trigger `baloo `. Searches files using Baloo. Requires Baloo file indexing, which Plasma may have disabled. Do not enable this plugin if you use another file indexer or the Albert file plugin, it would only duplicate the results.
 
-## Activities, KeePassXC
+## Activities
 
-Trigger `activities ` switches between Plasma activities. Trigger `keepass ` copies passwords of KeePassXC entries to the clipboard, the plugin settings explain the required Secret Service setup.
+Trigger `activities ` switches between Plasma activities.
 
 ## Build
 
