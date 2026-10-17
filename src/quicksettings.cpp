@@ -1,20 +1,17 @@
 #include "quicksettings.h"
+#include "quicksettings_p.h"
 #include <QCheckBox>
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusVariant>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QLabel>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QSettings>
-#include <QTimer>
 #include <QVBoxLayout>
 #include <albert/icon.h>
 #include <albert/logging.h>
@@ -38,7 +35,7 @@ struct QuickSettings::Inhibitions
     optional<uint> do_not_disturb;
 };
 
-namespace {
+namespace qs {
 
 const auto kwin_service = u"org.kde.KWin"_s;
 const auto night_light_path = u"/org/kde/KWin/NightLight"_s;
@@ -116,7 +113,7 @@ QVariant getProperty(const QDBusConnection &bus, const QString &service, const Q
 }
 
 QDBusMessage call(const QDBusConnection &bus, const QString &service, const QString &path,
-                  const QString &interface, const QString &method, const QVariantList &args = {})
+                  const QString &interface, const QString &method, const QVariantList &args)
 {
     auto msg = QDBusMessage::createMethodCall(service, path, interface, method);
     msg.setArguments(args);
@@ -125,7 +122,7 @@ QDBusMessage call(const QDBusConnection &bus, const QString &service, const QStr
 
 // Fire and forget, but log errors. E.g. system bus calls may be denied by polkit.
 void callAsync(const QDBusConnection &bus, const QString &service, const QString &path,
-               const QString &interface, const QString &method, const QVariantList &args = {})
+               const QString &interface, const QString &method, const QVariantList &args)
 {
     auto msg = QDBusMessage::createMethodCall(service, path, interface, method);
     msg.setArguments(args);
@@ -143,42 +140,6 @@ void setPropertyAsync(const QDBusConnection &bus, const QString &service, const 
     callAsync(bus, service, path, u"org.freedesktop.DBus.Properties"_s, u"Set"_s,
               {interface, name, QVariant::fromValue(QDBusVariant(value))});
 }
-
-// States fetched by running a process are expensive. Keep them for a while, the global query
-// asks for them on every keystroke.
-template<typename T>
-class TimedCache
-{
-public:
-
-    TimedCache(function<T()> fetch, chrono::milliseconds ttl) : fetch_(::move(fetch)), ttl_(ttl) {}
-
-    T get()
-    {
-        QMutexLocker locker(&mutex_);
-        if (const auto now = chrono::steady_clock::now(); !value_ || now - time_ > ttl_)
-        {
-            value_ = fetch_();
-            time_ = now;
-        }
-        return *value_;
-    }
-
-    void invalidate()
-    {
-        QMutexLocker locker(&mutex_);
-        value_.reset();
-    }
-
-private:
-
-    const function<T()> fetch_;
-    const chrono::milliseconds ttl_;
-    QMutex mutex_;
-    optional<T> value_;
-    chrono::steady_clock::time_point time_;
-
-};
 
 // -------------------------------------------------------------------------------------------------
 
@@ -602,311 +563,9 @@ shared_ptr<Item> colorSchemeItem()
                     u"preferences-desktop-color"_s, ::move(actions));
 }
 
-// -------------------------------------------------------------------------------------------------
+}  // namespace qs
 
-/// Runs pactl and returns its stdout. Works with PulseAudio and PipeWire.
-QByteArray pactl(const QStringList &args)
-{
-    QProcess process;
-    process.start(u"pactl"_s, args);
-    if (!process.waitForFinished(1000) || process.exitCode() != 0)
-        return {};
-    return process.readAllStandardOutput();
-}
-
-struct Sink
-{
-    QString name;
-    QString description;
-};
-
-/// Returns the default sink and the sinks that can be used, i.e. have an available port.
-pair<QString, vector<Sink>> fetchSinks()
-{
-    const auto default_sink = QString::fromUtf8(pactl({u"get-default-sink"_s})).trimmed();
-
-    vector<Sink> sinks;
-    const auto doc = QJsonDocument::fromJson(pactl({u"-f"_s, u"json"_s, u"list"_s, u"sinks"_s}));
-    for (const auto &value : doc.array())
-    {
-        const auto sink = value.toObject();
-        const auto name = sink.value(u"name"_s).toString();
-
-        // Ports without a plugged in device are "not available", e.g. headphones
-        const auto ports = sink.value(u"ports"_s).toArray();
-        const bool available = ports.isEmpty()
-            || any_of(ports.begin(), ports.end(), [](const QJsonValue &port) {
-                   return port.toObject().value(u"availability"_s).toString()
-                          != u"not available"_s;
-               });
-
-        if (available || name == default_sink)
-            sinks.push_back({name, sink.value(u"description"_s).toString()});
-    }
-
-    // Strip the common prefix of the descriptions, e.g. the name of the sound card
-    if (sinks.size() > 1)
-    {
-        auto prefix = sinks.front().description;
-        for (const auto &sink : sinks)
-            while (!sink.description.startsWith(prefix))
-                prefix.chop(1);
-        prefix = prefix.left(prefix.lastIndexOf(u' ') + 1);
-        if (!prefix.isEmpty())
-            for (auto &sink : sinks)
-                sink.description = sink.description.mid(prefix.size());
-    }
-
-    return {default_sink, sinks};
-}
-
-TimedCache<pair<QString, vector<Sink>>> sinks_cache{fetchSinks, 5s};
-
-Action switchSinkAction(const Sink &sink)
-{
-    return {u"sink."_s + sink.name, u"Switch to %1"_s.arg(sink.description),
-            [name = sink.name]{
-                runDetachedProcess({u"pactl"_s, u"set-default-sink"_s, name});
-                sinks_cache.invalidate();
-            }};
-}
-
-/// Returns the audio output item and items to switch to sinks matching _matcher_.
-vector<RankItem> audioOutputItems(const Matcher &matcher, const QString &query, double score)
-{
-    const auto [default_sink, all_sinks] = sinks_cache.get();
-    if (all_sinks.empty())
-        return {};
-
-    QString current = default_sink;
-    vector<Action> actions;
-    vector<RankItem> items;
-    for (const auto &sink : all_sinks)
-    {
-        if (sink.name == default_sink)
-        {
-            current = sink.description;
-            continue;
-        }
-
-        actions.push_back(switchSinkAction(sink));
-
-        // E.g. "headphones" offers switching directly
-        if (const auto m = matcher.match(sink.description); m && !query.isEmpty())
-            items.emplace_back(makeItem(u"sink."_s + sink.name,
-                                        u"Switch Audio Output to %1"_s.arg(sink.description),
-                                        u"Current: %1"_s.arg(current), u"audio-card"_s,
-                                        {switchSinkAction(sink)}),
-                               m.score());
-    }
-    actions.push_back(openSettings(u"kcm_pulseaudio"_s));
-
-    if (score >= 0)
-        items.emplace_back(makeItem(u"audiooutput"_s, u"Audio Output"_s,
-                                    u"Current: %1"_s.arg(current), u"audio-card"_s,
-                                    ::move(actions)),
-                           score);
-    return items;
-}
-
-optional<bool> fetchMuted(bool microphone)
-{
-    const auto output = QString::fromUtf8(
-        pactl({microphone ? u"get-source-mute"_s : u"get-sink-mute"_s,
-               microphone ? u"@DEFAULT_SOURCE@"_s : u"@DEFAULT_SINK@"_s})).trimmed();
-    if (output.isEmpty())
-        return {};
-    return output.endsWith(u"yes"_s);  // "Mute: yes"
-}
-
-TimedCache<optional<bool>> audio_muted_cache{[]{ return fetchMuted(false); }, 3s};
-TimedCache<optional<bool>> microphone_muted_cache{[]{ return fetchMuted(true); }, 3s};
-
-shared_ptr<Item> muteItem(bool microphone)
-{
-    const auto muted_state = (microphone ? microphone_muted_cache : audio_muted_cache).get();
-    if (!muted_state)
-        return {};
-
-    const bool muted = *muted_state;
-    const auto device = microphone ? u"@DEFAULT_SOURCE@"_s : u"@DEFAULT_SINK@"_s;
-    const auto name = microphone ? u"Microphone"_s : u"Audio"_s;
-    return makeItem(
-        microphone ? u"micmute"_s : u"audiomute"_s,
-        u"Mute %1"_s.arg(name),
-        muted ? u"Muted"_s : u"Not muted"_s,
-        microphone ? (muted ? u"microphone-sensitivity-muted"_s : u"audio-input-microphone"_s)
-                   : (muted ? u"audio-volume-muted"_s : u"audio-volume-high"_s),
-        {
-            {
-                u"toggle"_s, muted ? u"Unmute"_s : u"Mute"_s,
-                [microphone, device]{
-                    runDetachedProcess({u"pactl"_s,
-                                        microphone ? u"set-source-mute"_s : u"set-sink-mute"_s,
-                                        device, u"toggle"_s});
-                    (microphone ? microphone_muted_cache : audio_muted_cache).invalidate();
-                }
-            },
-            openSettings(u"kcm_pulseaudio"_s)
-        });
-}
-
-// -------------------------------------------------------------------------------------------------
-
-struct Output
-{
-    QString name;
-    bool enabled;
-    bool panel;     ///< Built-in laptop panel
-    double scale;
-    int width;      ///< Logical width
-};
-
-vector<Output> fetchOutputs()
-{
-    QProcess process;
-    process.start(u"kscreen-doctor"_s, {u"--json"_s});
-    if (!process.waitForFinished(2000) || process.exitCode() != 0)
-        return {};
-
-    vector<Output> outputs;
-    const auto doc = QJsonDocument::fromJson(process.readAllStandardOutput());
-    for (const auto &value : doc.object().value(u"outputs"_s).toArray())
-    {
-        const auto o = value.toObject();
-        if (!o.value(u"connected"_s).toBool())
-            continue;
-
-        const auto current_mode = o.value(u"currentModeId"_s).toString();
-        int width = 0;
-        for (const auto &mode : o.value(u"modes"_s).toArray())
-            if (mode.toObject().value(u"id"_s).toString() == current_mode)
-                width = mode.toObject().value(u"size"_s).toObject().value(u"width"_s).toInt();
-
-        const auto scale = o.value(u"scale"_s).toDouble(1.0);
-        outputs.push_back({
-            .name = o.value(u"name"_s).toString(),
-            .enabled = o.value(u"enabled"_s).toBool(),
-            .panel = o.value(u"type"_s).toInt() == 7,  // KScreen::Output::Panel
-            .scale = scale,
-            .width = int(width / (scale > 0 ? scale : 1.0)),
-        });
-    }
-    return outputs;
-}
-
-TimedCache<vector<Output>> outputs_cache{fetchOutputs, 5s};
-
-vector<Output> outputs() { return outputs_cache.get(); }
-
-void kscreenDoctor(const QStringList &args)
-{
-    runDetachedProcess(QStringList{u"kscreen-doctor"_s} + args);
-    outputs_cache.invalidate();
-}
-
-shared_ptr<Item> displayModeItem()
-{
-    const auto all = outputs();
-    if (all.empty())
-        return {};
-
-    QStringList enabled;
-    for (const auto &o : all)
-        if (o.enabled)
-            enabled << o.name;
-
-    QString state;
-    if (all.size() == 1)
-        state = u"One screen: %1"_s.arg(all.front().name);
-    else
-        state = u"%1 screens connected, enabled: %2"_s.arg(all.size()).arg(enabled.join(u", "_s));
-
-    vector<Action> actions{
-        // The display switcher of Plasma, also offers mirroring
-        {u"switcher"_s, u"Open display switcher"_s, []{
-            callAsync(QDBusConnection::sessionBus(), u"org.kde.kscreen.osdService"_s,
-                      u"/org/kde/kscreen/osdService"_s, u"org.kde.kscreen.osdService"_s,
-                      u"showActionSelector"_s);
-        }}
-    };
-
-    const auto panel = find_if(all.begin(), all.end(), [](const Output &o){ return o.panel; });
-    if (all.size() > 1 && panel != all.end())
-    {
-        // Extend: panel left, external screens to the right
-        QStringList extend{u"output.%1.enable"_s.arg(panel->name),
-                           u"output.%1.position.0,0"_s.arg(panel->name)};
-        QStringList external_only{u"output.%1.disable"_s.arg(panel->name)};
-        QStringList panel_only{u"output.%1.enable"_s.arg(panel->name)};
-        int x = panel->width;
-        for (const auto &o : all)
-        {
-            if (o.panel)
-                continue;
-            extend << u"output.%1.enable"_s.arg(o.name) << u"output.%1.position.%2,0"_s.arg(o.name).arg(x);
-            x += o.width;
-            external_only.prepend(u"output.%1.enable"_s.arg(o.name));
-            panel_only << u"output.%1.disable"_s.arg(o.name);
-        }
-
-        actions.push_back({u"extend"_s, u"Extend"_s, [extend]{ kscreenDoctor(extend); }});
-        actions.push_back({u"external"_s, u"External screens only"_s,
-                           [external_only]{ kscreenDoctor(external_only); }});
-        actions.push_back({u"laptop"_s, u"Laptop screen only"_s,
-                           [panel_only]{ kscreenDoctor(panel_only); }});
-    }
-    actions.push_back(openSettings(u"kcm_kscreen"_s));
-
-    return makeItem(u"displaymode"_s, u"Display Mode"_s, state,
-                    u"preferences-desktop-display-randr"_s, ::move(actions));
-}
-
-shared_ptr<Item> displayScaleItem()
-{
-    const auto all = outputs();
-
-    QStringList state;
-    vector<Action> actions;
-    for (const auto &o : all)
-    {
-        if (!o.enabled)
-            continue;
-
-        const auto current = lround(o.scale * 100);
-        state << u"%1: %2%"_s.arg(o.name).arg(current);
-
-        for (int percent : {100, 125, 150, 175, 200})
-            if (percent != current)
-                actions.push_back({
-                    u"scale.%1.%2"_s.arg(o.name).arg(percent),
-                    all.size() > 1 ? u"%1: Set to %2%"_s.arg(o.name).arg(percent)
-                                   : u"Set to %1%"_s.arg(percent),
-                    [name = o.name, percent]{
-                        kscreenDoctor({u"output.%1.scale.%2"_s.arg(name).arg(percent / 100.0)});
-                    }
-                });
-    }
-
-    if (state.isEmpty())
-        return {};
-
-    actions.push_back(openSettings(u"kcm_kscreen"_s));
-    return makeItem(u"displayscale"_s, u"Display Scale"_s, state.join(u", "_s),
-                    u"zoom-fit-best"_s, ::move(actions));
-}
-
-shared_ptr<Item> screensOffItem()
-{
-    return makeItem(u"screensoff"_s, u"Turn Off Screens"_s,
-                    u"Turns the screens off until the next input"_s, u"system-suspend"_s,
-                    {{u"off"_s, u"Turn off"_s, []{
-                        // Delay so the key release does not wake the screens immediately
-                        QTimer::singleShot(500, []{ kscreenDoctor({u"--dpms"_s, u"off"_s}); });
-                    }}});
-}
-
-}  // namespace
+using namespace qs;
 
 // -------------------------------------------------------------------------------------------------
 
