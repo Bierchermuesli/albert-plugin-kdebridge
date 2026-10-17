@@ -4,6 +4,9 @@ Albert plugin that brings KDE Plasma services to Albert: windows, browser tabs, 
 
 The bridge provides a set of plugins. Each one shows up in the Albert plugin list as `kdebridge.<name>` with a `KDE` prefix and can be enabled, disabled and triggered on its own. The settings page of the bridge lists them all and shows whether the service behind a runner is running.
 
+ <img width="930" height="758" alt="image" src="https://github.com/user-attachments/assets/56b371ee-f2f6-44c9-b31b-70e04a40f85b" />
+
+
 Most of them talk directly to the services that implement the KRunner D-Bus interface (`org.kde.krunner1`), e.g. KWin, the Plasma browser integration or Baloo. KRunner itself is not needed. Any runner found in `krunner/dbusplugins` is picked up automatically, the ones below get extra features.
 
 Each plugin takes part in the global search or is used with its trigger only, that is Albert's usual per-plugin setting. The browser history, the file search and the system settings are not part of the global search by default, the clipboard is trigger only.
