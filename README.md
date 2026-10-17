@@ -13,7 +13,8 @@ Each plugin takes part in the global search or is used with its trigger only, th
 
 Results of the runners show their source in the subtext and as a badge on the icon, e.g. `Tab · example.com`, so a window, a tab and a history entry of the same page are easy to tell apart. Both can be turned off in the bridge settings.
 
-## Windows
+## Modules
+#### Windows
 
 Trigger `win `. Find and switch to open windows and virtual desktops, works on Wayland. The window icons come from KWin. Part of the global search by default.
 
@@ -28,7 +29,7 @@ Each action can be disabled in the plugin settings. The actions use KWin scripti
 
 <img width="892" height="543" alt="image" src="https://github.com/user-attachments/assets/93aad0ce-aca9-4ae6-8f7d-c68b6f3a5a47" />
 
-## Browser Tabs
+### Browser Tabs
 
 Trigger `tabs `. Open tabs of browsers with the Plasma browser integration, with favicons. Part of the global search by default.
 
@@ -37,18 +38,18 @@ Trigger `tabs `. Open tabs of browsers with the Plasma browser integration, with
 - Copy URL
 - Mute and unmute, for tabs playing audio
 
-## Browser History
+### Browser History
 
 Trigger `history `. Searches the browser history via the Plasma browser integration. Not part of the global search by default, it is too slow and too noisy for it.
 
 - Open
 - Copy URL
 
-## System Settings
+#### System Settings
 
 Trigger `settings `, not part of the global search by default. Opens the pages of System Settings and Info Center. Searches names and the keywords KDE provides for each page, in your language and in English, e.g. `hdmi`, `resolution` or `brightness` find the display configuration, `cpu` the Info Center page. Pages that are not available on the current platform are hidden.
 
-## Quick Settings
+#### Quick Settings
 
 Trigger `qs `. Shows the current state of Plasma quick settings and changes them. Enter applies the most likely change, the other options are available as actions.
 
@@ -70,14 +71,14 @@ Trigger `qs `. Shows the current state of Plasma quick settings and changes them
 
 Every setting has an action to open the matching System Settings page and can be disabled in the plugin settings. Night light and do not disturb are paused by Albert and resumed when Albert quits.
 
-## Clipboard
+#### Clipboard
 
 Trigger `clip `. Searches the clipboard history of Klipper, newest first. All words of the query have to match.
 
 - Paste
 - Copy
 
-## Screenshot
+#### Screenshot
 
 Trigger `shot `. Screenshots and screen recordings with Spectacle: region, window, screen, all screens, and recordings of region, screen and window.
 
@@ -85,15 +86,15 @@ Trigger `shot `. Screenshots and screen recordings with Spectacle: region, windo
 - Copy to clipboard, without the editor
 - Save to file, without the editor
 
-## File Search
+#### File Search
 
 Trigger `baloo `. Searches files using Baloo, not part of the global search by default. Requires Baloo file indexing, which Plasma may have disabled. May be redundant if you use another file indexer or the Albert file plugin.
 
-## Activities
+#### Activities
 
 Trigger `activities ` switches between Plasma activities.
 
-## Try it
+## Try it / Beta testers
 
 Albert loads native plugins from `~/.local/lib/albert/`. The plugin has to be built against the Albert version that is installed. The official Albert packages ship the headers and CMake files needed for that, so the Albert source tree is not required.
 
@@ -120,7 +121,7 @@ KDE Plasma 6 on Linux, Wayland or X11. Some features need the tools behind them,
 - Browser tabs and history: the Plasma browser integration extension in the browser
 - File search: Baloo file indexing
 
-## Todo
+### Todo
 
 Before going upstream:
 
