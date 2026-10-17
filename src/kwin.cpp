@@ -238,7 +238,7 @@ vector<Action> kwin::windowActions(const QString &match_id, const QString &scrip
                             QString arg = {}) {
         return Action{
             ::move(id), ::move(text),
-            [name, &script, uuid, arg, script_dir]{
+            [name, script, uuid, arg, script_dir]{
                 runWindowScript(name, script, uuid, arg, script_dir);
             }
         };

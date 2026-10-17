@@ -183,17 +183,12 @@ another file indexer or the Albert file plugin, it would only duplicate results.
 
 // -------------------------------------------------------------------------------------------------
 
-static RunnerTraits traits(QString label, QString badge, QString trigger,
-                           QString default_action = u"Open"_s, bool global = true,
-                           QString note = {})
+static RunnerTraits traits(QString label, QString badge, QString trigger)
 {
     RunnerTraits t;
     t.source_label = ::move(label);
     t.source_badge = ::move(badge);
     t.trigger = ::move(trigger);
-    t.default_action = ::move(default_action);
-    t.global_by_default = global;
-    t.metadata_note = ::move(note);
     return t;
 }
 
@@ -202,23 +197,33 @@ unique_ptr<RunnerExtension> makeRunnerExtension(const RunnerInfo &info, Settings
     const auto &name = info.plugin_name;
 
     if (name == u"windows"_s || kwin::isWindowsRunner(info.service, info.object_path))
-        return make_unique<WindowsExtension>(
-            info, traits(u"Window"_s, u"window"_s, u"win "_s, u"Switch to"_s), ::move(settings));
+    {
+        auto t = traits(u"Window"_s, u"window"_s, u"win "_s);
+        t.default_action = u"Switch to"_s;
+        return make_unique<WindowsExtension>(info, ::move(t), ::move(settings));
+    }
 
     if (name == u"browsertabs"_s)
-        return make_unique<BrowserTabsExtension>(
-            info, traits(u"Tab"_s, u"tab-new"_s, u"tabs "_s, u"Switch to"_s), ::move(settings));
+    {
+        auto t = traits(u"Tab"_s, u"tab-new"_s, u"tabs "_s);
+        t.default_action = u"Switch to"_s;
+        return make_unique<BrowserTabsExtension>(info, ::move(t), ::move(settings));
+    }
 
     if (name == u"browserhistory"_s)
-        return make_unique<RunnerExtension>(
-            info, traits(u"History"_s, u"view-history"_s, u"history "_s, u"Open"_s, false),
-            ::move(settings));
+    {
+        auto t = traits(u"History"_s, u"view-history"_s, u"history "_s);
+        t.global_by_default = false;  // too slow and too noisy
+        return make_unique<RunnerExtension>(info, ::move(t), ::move(settings));
+    }
 
     if (name == u"baloosearch"_s)
-        return make_unique<BalooExtension>(
-            info, traits(u"File"_s, u"system-search"_s, u"baloo "_s, u"Open"_s, false,
-                         u"Requires Baloo file indexing."_s),  // not global, floods the results
-            ::move(settings));
+    {
+        auto t = traits(u"File"_s, u"system-search"_s, u"baloo "_s);
+        t.global_by_default = false;  // floods the results
+        t.metadata_note = u"Requires Baloo file indexing."_s;
+        return make_unique<BalooExtension>(info, ::move(t), ::move(settings));
+    }
 
     if (name == u"activities2"_s)
         return make_unique<RunnerExtension>(
