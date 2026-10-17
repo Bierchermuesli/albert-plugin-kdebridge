@@ -8,13 +8,12 @@ Most of them talk directly to the services that implement the KRunner D-Bus inte
 
 Each plugin takes part in the global search or is used with its trigger only, that is Albert's usual per-plugin setting. The browser history, the file search and the system settings are not part of the global search by default, the clipboard is trigger only.
 
-Results of the runners show their source in the subtext and as a badge on the icon, e.g. `Tab · github.com`, so a window, a tab and a history entry of the same page are easy to tell apart. Both can be turned off in the bridge settings.
+Results of the runners show their source in the subtext and as a badge on the icon, e.g. `Tab · example.com`, so a window, a tab and a history entry of the same page are easy to tell apart. Both can be turned off in the bridge settings.
 
-<!-- screenshot: brave.png -->
 
 ## Windows
 
-Trigger `win `. Find and switch to open windows and virtual desktops, works on Wayland. The window icons come from KWin.
+Trigger `win `. Find and switch to open windows and virtual desktops, works on Wayland. The window icons come from KWin. May be used as Global search.
 
 Actions on a window:
 
@@ -25,11 +24,12 @@ Actions on a window:
 
 Each action can be disabled in the plugin settings. The actions use KWin scripting via D-Bus.
 
-<!-- screenshot: kitty.png -->
+<img width="892" height="543" alt="image" src="https://github.com/user-attachments/assets/93aad0ce-aca9-4ae6-8f7d-c68b6f3a5a47" />
+
 
 ## Browser Tabs
 
-Trigger `tabs `. Open tabs of browsers with the Plasma browser integration, with favicons.
+Trigger `tabs `. Open tabs of browsers with the Plasma browser integration, with favicons.  May be used as Global search.
 
 - Switch to the tab
 - Bring browser here: activates the tab and moves the browser window to the current desktop and screen
@@ -69,7 +69,6 @@ Trigger `qs `. Shows the current state of Plasma quick settings and changes them
 
 Every setting has an action to open the matching System Settings page and can be disabled in the plugin settings. Night light and do not disturb are paused by Albert and resumed when Albert quits.
 
-<!-- screenshot: mute.png -->
 
 ## Clipboard
 
@@ -88,7 +87,7 @@ Trigger `shot `. Screenshots and screen recordings with Spectacle: region, windo
 
 ## File Search
 
-Trigger `baloo `. Searches files using Baloo, not part of the global search by default. Requires Baloo file indexing, which Plasma may have disabled. Do not enable this plugin if you use another file indexer or the Albert file plugin, it would only duplicate the results.
+Trigger `baloo `. Searches files using Baloo, not part of the global search by default. Requires Baloo file indexing, which Plasma may have disabled. May be redundant if you use another file indexer or the Albert file plugin.
 
 ## Activities
 
