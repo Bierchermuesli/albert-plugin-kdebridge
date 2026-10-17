@@ -1,21 +1,17 @@
 #include "appearance.h"
-#include "kwin.h"
 #include "runner.h"
+#include "runnerextension.h"
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusMessage>
-#include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
-#include <QCheckBox>
 #include <QImage>
-#include <QLabel>
-#include <QSettings>
-#include <QVBoxLayout>
 #include <QMutexLocker>
 #include <QPainter>
-#include <QTimer>
+#include <QPalette>
+#include <QSettings>
 #include <albert/desktopentryparser.h>
 #include <albert/icon.h>
 #include <albert/logging.h>
@@ -35,12 +31,6 @@ static const auto desktop_group = u"Desktop Entry"_s;
 static const int global_match_timeout_ms = 200;
 static const int triggered_match_timeout_ms = 3000;
 static const int actions_timeout_ms = 500;
-
-// Runners that are too slow for the global query, i.e. exceed global_match_timeout_ms
-static const QStringList slow_runners{u"browserhistory"_s};
-
-// Time the browser needs to activate a tab and update its window caption
-static const int browser_tab_activation_delay_ms = 400;
 
 namespace {
 
@@ -76,15 +66,6 @@ private:
     QImage image_;
     QString url_;
 
-};
-
-struct RemoteMatch
-{
-    QString id;
-    QString text;
-    QString icon_name;
-    double relevance = 0;
-    QVariantMap properties;
 };
 
 // Some runners use 'i', some 'u' for the match type, e.g. a(sssida{sv}) vs. a(sssuda{sv}).
@@ -148,6 +129,17 @@ unique_ptr<Icon> makeIcon(const QImage &image, const QString &icon_name, const Q
     return Icon::theme(fallback);
 }
 
+// Badge in the bottom right corner. Use the palette for the background, the theme draws its
+// glyphs in a color that contrasts with it.
+unique_ptr<Icon> badgedIcon(unique_ptr<Icon> icon, const QString &badge)
+{
+    const auto palette = QGuiApplication::palette();
+    return Icon::composed(::move(icon),
+                          Icon::iconified(Icon::theme(badge), palette.window(), 0.5, 1,
+                                          palette.mid()),
+                          0.8, 0.55, 0.0, 0.0, 1.0, 1.0);
+}
+
 }  // namespace
 
 // -------------------------------------------------------------------------------------------------
@@ -189,8 +181,6 @@ RunnerInfo RunnerInfo::fromDesktopFile(const QString &path)
     return info;
 }
 
-// -------------------------------------------------------------------------------------------------
-
 PluginMetadata runnerMetadata(const RunnerInfo &info, const PluginMetadata &provider)
 {
     PluginMetadata md;
@@ -201,8 +191,8 @@ PluginMetadata runnerMetadata(const RunnerInfo &info, const PluginMetadata &prov
     md.description = info.description.isEmpty()
                          ? u"Provided by %1."_s.arg(provider.name)
                          : u"%1. Provided by %2."_s.arg(info.description, provider.name);
-    if (info.plugin_name == u"baloosearch"_s)
-        md.description += u" Requires Baloo file indexing."_s;
+    if (const auto note = makeRunnerExtension(info)->traits().metadata_note; !note.isEmpty())
+        md.description += u' ' + note;
     md.license = info.license;
     if (!info.author.isEmpty())
         md.authors << info.author;
@@ -212,97 +202,38 @@ PluginMetadata runnerMetadata(const RunnerInfo &info, const PluginMetadata &prov
     return md;
 }
 
-// -------------------------------------------------------------------------------------------------
-
-// Short label and badge icon of the source, shown to tell results of different sources apart
-static pair<QString, QString> source(const RunnerInfo &info)
+void runRemoteMatch(const QString &service, const QString &object_path,
+                    const QString &match_id, const QString &action_id)
 {
-    static const QHash<QString, pair<QString, QString>> sources{
-        {u"windows"_s, {u"Window"_s, u"window"_s}},
-        {u"browsertabs"_s, {u"Tab"_s, u"tab-new"_s}},
-        {u"browserhistory"_s, {u"History"_s, u"view-history"_s}},
-        {u"baloosearch"_s, {u"File"_s, u"system-search"_s}},
-        {u"activities2"_s, {u"Activity"_s, u"activities"_s}},
-        {u"krunner-keepassxc"_s, {u"KeePassXC"_s, u"password-copy"_s}},
-    };
-    return sources.value(info.plugin_name, {info.name, info.icon});
+    auto msg = QDBusMessage::createMethodCall(service, object_path,
+                                              krunner_interface, u"Run"_s);
+    msg << match_id << action_id;
+    QDBusConnection::sessionBus().send(msg);
 }
+
+// -------------------------------------------------------------------------------------------------
 
 Runner::Runner(const RunnerInfo &info, shared_ptr<const Appearance> appearance) :
     info_(info),
     appearance_(::move(appearance)),
-    source_label_(source(info).first),
-    source_badge_(source(info).second),
+    extension_(makeRunnerExtension(info, [this]{ return settings(); })),
     match_regex_(info.match_regex),
-    cache_dir_(QString::fromStdString(cacheLocation().string())),
-    is_windows_runner_(kwin::isWindowsRunner(info.service, info.object_path)),
-    is_browser_tabs_runner_(info.service.startsWith(u"org.kde.plasma.browser_integration"_s)
-                            && info.object_path == u"/TabsRunner"_s),
-    window_actions_(kwin::AllWindowActions)
+    cache_dir_(QString::fromStdString(cacheLocation().string()))
 {
     // Slow runners would stall the global query. Exclude them from it by default. The key is
     // read by the core, so only set it if the user has not decided yet.
-    if (slow_runners.contains(info_.plugin_name))
+    if (extension_->traits().slow_for_global_query)
         if (auto s = settings(); !s->contains(u"global_handler_enabled"_s))
             s->setValue(u"global_handler_enabled"_s, false);
 
-    if (is_windows_runner_)
-    {
-        const auto s = settings();
-        uint enabled = 0;
-        for (const auto &action : kwin::windowActionInfos())
-            if (s->value(u"window_action_"_s + action.key, true).toBool())
-                enabled |= action.flag;
-        window_actions_ = enabled;
-    }
+    extension_->loadSettings();
 }
 
-QWidget *Runner::buildConfigWidget()
-{
-    if (info_.plugin_name == u"baloosearch"_s)
-        return buildBalooConfigWidget();
+Runner::~Runner() = default;
 
-    if (info_.plugin_name == u"krunner-keepassxc"_s)
-        return buildKeePassXCConfigWidget();
+QString Runner::defaultTrigger() const { return extension_->traits().trigger; }
 
-    if (!is_windows_runner_)
-        return nullptr;
-
-    auto *w = new QWidget;
-    auto *l = new QVBoxLayout(w);
-    l->addWidget(new QLabel(u"Window actions"_s, w));
-
-    for (const auto &info : kwin::windowActionInfos())
-    {
-        auto *cb = new QCheckBox(info.text, w);
-        cb->setChecked(window_actions_ & info.flag);
-        QObject::connect(cb, &QCheckBox::toggled, w, [this, flag=info.flag, key=info.key](bool checked){
-            if (checked)
-                window_actions_ |= flag;
-            else
-                window_actions_ &= ~flag;
-            settings()->setValue(u"window_action_"_s + key, checked);
-        });
-        l->addWidget(cb);
-    }
-
-    l->addStretch();
-    return w;
-}
-
-QString Runner::defaultTrigger() const
-{
-    // Short triggers for known runners
-    static const QHash<QString, QString> triggers{
-        {u"windows"_s, u"win "_s},
-        {u"browsertabs"_s, u"tabs "_s},
-        {u"browserhistory"_s, u"history "_s},
-        {u"baloosearch"_s, u"baloo "_s},
-        {u"activities2"_s, u"activities "_s},
-        {u"krunner-keepassxc"_s, u"keepass "_s},
-    };
-    return triggers.value(info_.plugin_name, info_.plugin_name + u' ');
-}
+QWidget *Runner::buildConfigWidget() { return extension_->buildConfigWidget(); }
 
 QStringList Runner::services() const
 {
@@ -321,70 +252,6 @@ QStringList Runner::services() const
                 services << name;
     }
     return services;
-}
-
-static QWidget *textWidget(const QString &html)
-{
-    auto *w = new QWidget;
-    auto *l = new QVBoxLayout(w);
-    auto *label = new QLabel(html, w);
-    label->setWordWrap(true);
-    label->setTextFormat(Qt::RichText);
-    l->addWidget(label);
-    l->addStretch();
-    return w;
-}
-
-QWidget *Runner::buildBalooConfigWidget()
-{
-    // The file indexer daemon registers this service while indexing is enabled
-    const auto *iface = QDBusConnection::sessionBus().interface();
-    const bool indexing = iface && iface->isServiceRegistered(u"org.kde.baloo"_s).value();
-
-    auto text = uR"(
-<p>Searches files using Baloo, the file indexer of KDE Plasma. This makes no sense if you use
-another file indexer or the Albert file plugin, it would only duplicate results.</p>
-)"_s;
-    text += indexing
-        ? u"<p>Baloo file indexing is <b>enabled</b> on this system.</p>"_s
-        : u"<p><b>Warning:</b> Baloo file indexing is <b>not running</b> on this system, this "
-          u"plugin will not find any files. Enable it in System Settings &rarr; File Search.</p>"_s;
-
-    return textWidget(text);
-}
-
-QWidget *Runner::buildKeePassXCConfigWidget()
-{
-    // The runner reads the entries via the Secret Service, which has to be provided by KeePassXC
-    QString provider;
-    if (const auto *iface = QDBusConnection::sessionBus().interface())
-        if (const auto pid = iface->servicePid(u"org.freedesktop.secrets"_s); pid.isValid())
-            if (QFile comm(u"/proc/%1/comm"_s.arg(pid.value())); comm.open(QIODevice::ReadOnly))
-                provider = QString::fromUtf8(comm.readAll()).trimmed();
-
-    auto text = uR"(
-<p>Copies passwords of KeePassXC entries to the clipboard. The runner reads the entries via the
-Secret Service, which has to be provided by KeePassXC:</p>
-<ol>
-<li>KeePassXC: Settings &rarr; Secret Service Integration &rarr; enable it and select the
-exposed groups in the database settings.</li>
-<li>System Settings &rarr; KDE Wallet: disable <i>Use KWallet for the Secret Service
-interface</i>.</li>
-<li>Log out and in again.</li>
-</ol>
-<p>Note: Applications storing secrets via the Secret Service (e.g. browsers) will then use
-KeePassXC instead of KWallet. Existing KWallet entries are not migrated.</p>
-)"_s;
-
-    if (provider.isEmpty())
-        text += u"<p><b>Warning:</b> No Secret Service is running.</p>"_s;
-    else if (provider.startsWith(u"keepassxc"_s))
-        text += u"<p>The Secret Service is provided by <b>KeePassXC</b>.</p>"_s;
-    else
-        text += u"<p><b>Warning:</b> The Secret Service is provided by <b>%1</b>, "
-                u"not KeePassXC. This plugin will not work.</p>"_s.arg(provider.toHtmlEscaped());
-
-    return textWidget(text);
 }
 
 vector<Runner::RemoteAction> Runner::remoteActions(const QString &service)
@@ -427,15 +294,6 @@ vector<Runner::RemoteAction> Runner::remoteActions(const QString &service)
     return actions;
 }
 
-void Runner::run(const QString &service, const QString &object_path,
-                 const QString &match_id, const QString &action_id)
-{
-    auto msg = QDBusMessage::createMethodCall(service, object_path,
-                                              krunner_interface, u"Run"_s);
-    msg << match_id << action_id;
-    QDBusConnection::sessionBus().send(msg);
-}
-
 vector<RankItem> Runner::rankItems(QueryContext &ctx)
 {
     vector<RankItem> results;
@@ -447,8 +305,9 @@ vector<RankItem> Runner::rankItems(QueryContext &ctx)
     if (!info_.match_regex.isEmpty() && !match_regex_.match(query).hasMatch())
         return results;
 
-    const bool source_subtext = appearance_->source_subtext;
-    const bool source_badge = appearance_->source_badge;
+    const auto &traits = extension_->traits();
+    const auto source_label = appearance_->source_subtext ? traits.source_label : QString();
+    const auto source_badge = appearance_->source_badge ? traits.source_badge : QString();
 
     auto bus = QDBusConnection::sessionBus();
     for (const auto &service : services())
@@ -473,83 +332,55 @@ vector<RankItem> Runner::rankItems(QueryContext &ctx)
         if (matches.empty())
             continue;
 
-        const auto actions = remoteActions(service);
-
-        // Windows and tabs exist already, everything else gets opened
-        const auto default_action_text = is_windows_runner_ || is_browser_tabs_runner_
-                                             ? u"Switch to"_s : u"Open"_s;
-
-        const uint window_actions = is_windows_runner_ ? window_actions_.load() : 0;
-        const auto desktops = window_actions & kwin::SendToDesktop ? kwin::desktops()
-                                                                   : vector<kwin::Desktop>{};
+        const auto remote_actions = remoteActions(service);
 
         for (const auto &m : matches)
         {
-            const auto image = parseIconData(m.properties.value(u"icon-data"_s));
-            const auto subtext = m.properties.value(u"subtext"_s).toString();
-
-            vector<Action> item_actions;
-            item_actions.push_back({
-                u"run"_s, default_action_text,
-                [service, path=info_.object_path, mid=m.id]{ run(service, path, mid, {}); }
+            vector<Action> actions;
+            actions.push_back({
+                u"run"_s, traits.default_action,
+                [service, path = info_.object_path, mid = m.id]{
+                    runRemoteMatch(service, path, mid, {});
+                }
             });
 
-            if (is_browser_tabs_runner_)
-                item_actions.push_back({
-                    u"bringhere"_s, u"Bring browser here"_s,
-                    [service, path=info_.object_path, mid=m.id, title=m.text, dir=cache_dir_]{
-                        // The browser may switch desktops when activating the tab
-                        const auto desktop = kwin::currentDesktop();
-                        run(service, path, mid, {});
-                        QTimer::singleShot(browser_tab_activation_delay_ms, [title, desktop, dir]{
-                            kwin::bringHereByCaption(title, desktop, dir);
-                        });
-                    }
-                });
+            for (auto &a : extension_->actions({m, service, info_.object_path, cache_dir_}))
+                actions.emplace_back(::move(a));
 
             if (const auto urls = m.properties.value(u"urls"_s).toStringList(); !urls.isEmpty())
-                item_actions.push_back({
+                actions.push_back({
                     u"copyurl"_s, u"Copy URL"_s,
-                    [url=urls.constFirst()]{ setClipboardText(QString(url)); }
+                    [url = urls.constFirst()]{ setClipboardText(QString(url)); }
                 });
-
-            if (window_actions)
-                for (auto &a : kwin::windowActions(m.id, cache_dir_, desktops, window_actions))
-                    item_actions.emplace_back(::move(a));
 
             // If the match does not specify actions, all actions apply
             const auto action_ids = m.properties.value(u"actions"_s).toStringList();
-            for (const auto &a : actions)
+            for (const auto &a : remote_actions)
                 if (!m.properties.contains(u"actions"_s) || action_ids.contains(a.id))
-                    item_actions.push_back({
+                    actions.push_back({
                         a.id, a.text,
-                        [service, path=info_.object_path, mid=m.id, aid=a.id]{ run(service, path, mid, aid); }
+                        [service, path = info_.object_path, mid = m.id, aid = a.id]{
+                            runRemoteMatch(service, path, mid, aid);
+                        }
                     });
 
-            QString item_subtext = subtext.isEmpty() ? info_.name : subtext;
-            if (source_subtext)
-                item_subtext = subtext.isEmpty() ? source_label_
-                                                 : u"%1 · %2"_s.arg(source_label_, subtext);
+            const auto subtext = m.properties.value(u"subtext"_s).toString();
+            QString item_subtext;
+            if (source_label.isEmpty())
+                item_subtext = subtext.isEmpty() ? info_.name : subtext;
+            else
+                item_subtext = subtext.isEmpty() ? source_label
+                                                 : u"%1 · %2"_s.arg(source_label, subtext);
 
             auto item = StandardItem::make(
-                m.id,
-                m.text,
-                item_subtext,
-                [image, icon_name=m.icon_name, fallback=info_.icon,
-                 badge = source_badge ? source_badge_ : QString()]{
+                m.id, m.text, item_subtext,
+                [image = parseIconData(m.properties.value(u"icon-data"_s)),
+                 icon_name = m.icon_name, fallback = info_.icon, source_badge]{
                     auto icon = makeIcon(image, icon_name, fallback);
-                    if (badge.isEmpty())
-                        return icon;
-                    // Badge in the bottom right corner. Use the palette for the background,
-                    // the theme draws its glyphs in a color that contrasts with it.
-                    const auto palette = QGuiApplication::palette();
-                    return Icon::composed(::move(icon),
-                                          Icon::iconified(Icon::theme(badge),
-                                                          palette.window(), 0.5, 1,
-                                                          palette.mid()),
-                                          0.8, 0.55, 0.0, 0.0, 1.0, 1.0);
+                    return source_badge.isEmpty() ? ::move(icon)
+                                                  : badgedIcon(::move(icon), source_badge);
                 },
-                ::move(item_actions));
+                ::move(actions));
 
             results.emplace_back(::move(item), qBound(0.0, m.relevance, 1.0));
         }

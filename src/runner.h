@@ -2,11 +2,13 @@
 #include <QHash>
 #include <QMutex>
 #include <QRegularExpression>
-#include <atomic>
+#include <QVariantMap>
 #include <memory>
 #include <albert/extensionplugin.h>
 #include <albert/globalqueryhandler.h>
 #include <albert/pluginmetadata.h>
+struct Appearance;
+class RunnerExtension;
 
 ///
 /// Runner definition parsed from a KRunner D-Bus plugin desktop file.
@@ -34,14 +36,30 @@ struct RunnerInfo
 albert::PluginMetadata runnerMetadata(const RunnerInfo &info,
                                       const albert::PluginMetadata &provider);
 
-struct Appearance;
+/// A match returned by a runner.
+struct RemoteMatch
+{
+    QString id;
+    QString text;
+    QString icon_name;
+    double relevance = 0;
+    QVariantMap properties;
+};
 
+/// Runs _action_id_ (empty for the default action) of the match _match_id_.
+void runRemoteMatch(const QString &service, const QString &object_path,
+                    const QString &match_id, const QString &action_id);
+
+///
+/// Generic KRunner D-Bus runner.
+///
 class Runner : public albert::ExtensionPlugin,
                public albert::GlobalQueryHandler
 {
 public:
 
     Runner(const RunnerInfo &info, std::shared_ptr<const Appearance> appearance);
+    ~Runner() override;
 
     QString defaultTrigger() const override;
     QWidget *buildConfigWidget() override;
@@ -56,22 +74,14 @@ private:
         QString icon;
     };
 
-    QWidget *buildBalooConfigWidget();
-    QWidget *buildKeePassXCConfigWidget();
     QStringList services() const;
     std::vector<RemoteAction> remoteActions(const QString &service);
-    static void run(const QString &service, const QString &object_path,
-                    const QString &match_id, const QString &action_id);
 
     const RunnerInfo info_;
     const std::shared_ptr<const Appearance> appearance_;
-    const QString source_label_;
-    const QString source_badge_;
+    const std::unique_ptr<RunnerExtension> extension_;
     const QRegularExpression match_regex_;
     const QString cache_dir_;
-    const bool is_windows_runner_;
-    const bool is_browser_tabs_runner_;
-    std::atomic<uint> window_actions_;
     QMutex actions_mutex_;
     QHash<QString, std::vector<RemoteAction>> actions_cache_;
 
