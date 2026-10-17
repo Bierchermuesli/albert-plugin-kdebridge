@@ -24,6 +24,7 @@
 #include <albert/systemutil.h>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <optional>
 using namespace Qt::StringLiterals;
 using namespace albert;
@@ -142,6 +143,42 @@ void setPropertyAsync(const QDBusConnection &bus, const QString &service, const 
     callAsync(bus, service, path, u"org.freedesktop.DBus.Properties"_s, u"Set"_s,
               {interface, name, QVariant::fromValue(QDBusVariant(value))});
 }
+
+// States fetched by running a process are expensive. Keep them for a while, the global query
+// asks for them on every keystroke.
+template<typename T>
+class TimedCache
+{
+public:
+
+    TimedCache(function<T()> fetch, chrono::milliseconds ttl) : fetch_(::move(fetch)), ttl_(ttl) {}
+
+    T get()
+    {
+        QMutexLocker locker(&mutex_);
+        if (const auto now = chrono::steady_clock::now(); !value_ || now - time_ > ttl_)
+        {
+            value_ = fetch_();
+            time_ = now;
+        }
+        return *value_;
+    }
+
+    void invalidate()
+    {
+        QMutexLocker locker(&mutex_);
+        value_.reset();
+    }
+
+private:
+
+    const function<T()> fetch_;
+    const chrono::milliseconds ttl_;
+    QMutex mutex_;
+    optional<T> value_;
+    chrono::steady_clock::time_point time_;
+
+};
 
 // -------------------------------------------------------------------------------------------------
 
@@ -497,7 +534,14 @@ shared_ptr<Item> touchpadItem()
 
 // -------------------------------------------------------------------------------------------------
 
-shared_ptr<Item> colorSchemeItem()
+struct ColorSchemes
+{
+    QStringList schemes;
+    QString current;
+};
+
+// kdeglobals does not necessarily contain the name of the current scheme, let KDE tell.
+ColorSchemes fetchColorSchemes()
 {
     QProcess process;
     process.start(u"plasma-apply-colorscheme"_s, {u"--list-schemes"_s});
@@ -506,16 +550,22 @@ shared_ptr<Item> colorSchemeItem()
 
     // " * BreezeDark (current color scheme)"
     static const QRegularExpression re(uR"(^\s*\*\s+(\S+)(\s+\(current color scheme\))?)"_s);
-    QStringList schemes;
-    QString current;
+    ColorSchemes cs;
     for (const auto &line : QString::fromUtf8(process.readAllStandardOutput()).split(u'\n'))
         if (const auto m = re.match(line); m.hasMatch())
         {
-            schemes << m.captured(1);
+            cs.schemes << m.captured(1);
             if (m.hasCaptured(2))
-                current = m.captured(1);
+                cs.current = m.captured(1);
         }
+    return cs;
+}
 
+TimedCache<ColorSchemes> color_schemes_cache{fetchColorSchemes, 10s};
+
+shared_ptr<Item> colorSchemeItem()
+{
+    const auto [schemes, current] = color_schemes_cache.get();
     if (schemes.isEmpty())
         return {};
 
@@ -532,7 +582,10 @@ shared_ptr<Item> colorSchemeItem()
     auto applyAction = [](const QString &scheme) {
         return Action{
             u"apply."_s + scheme, u"Switch to %1"_s.arg(scheme),
-            [scheme]{ runDetachedProcess({u"plasma-apply-colorscheme"_s, scheme}); }
+            [scheme]{
+                runDetachedProcess({u"plasma-apply-colorscheme"_s, scheme});
+                color_schemes_cache.invalidate();
+            }
         };
     };
 
@@ -607,41 +660,21 @@ pair<QString, vector<Sink>> fetchSinks()
     return {default_sink, sinks};
 }
 
-// Sinks are matched on every global query. Cache them to not spawn processes on each keystroke.
-QMutex sinks_mutex;
-optional<pair<QString, vector<Sink>>> sinks_cache;
-chrono::steady_clock::time_point sinks_cache_time;
-
-pair<QString, vector<Sink>> sinks()
-{
-    QMutexLocker locker(&sinks_mutex);
-    if (!sinks_cache || chrono::steady_clock::now() - sinks_cache_time > 5s)
-    {
-        sinks_cache = fetchSinks();
-        sinks_cache_time = chrono::steady_clock::now();
-    }
-    return *sinks_cache;
-}
-
-void invalidateSinks()
-{
-    QMutexLocker locker(&sinks_mutex);
-    sinks_cache.reset();
-}
+TimedCache<pair<QString, vector<Sink>>> sinks_cache{fetchSinks, 5s};
 
 Action switchSinkAction(const Sink &sink)
 {
     return {u"sink."_s + sink.name, u"Switch to %1"_s.arg(sink.description),
             [name = sink.name]{
                 runDetachedProcess({u"pactl"_s, u"set-default-sink"_s, name});
-                invalidateSinks();
+                sinks_cache.invalidate();
             }};
 }
 
 /// Returns the audio output item and items to switch to sinks matching _matcher_.
 vector<RankItem> audioOutputItems(const Matcher &matcher, const QString &query, double score)
 {
-    const auto [default_sink, all_sinks] = sinks();
+    const auto [default_sink, all_sinks] = sinks_cache.get();
     if (all_sinks.empty())
         return {};
 
@@ -676,15 +709,27 @@ vector<RankItem> audioOutputItems(const Matcher &matcher, const QString &query, 
     return items;
 }
 
-shared_ptr<Item> muteItem(bool microphone)
+optional<bool> fetchMuted(bool microphone)
 {
-    const auto device = microphone ? u"@DEFAULT_SOURCE@"_s : u"@DEFAULT_SINK@"_s;
     const auto output = QString::fromUtf8(
-        pactl({microphone ? u"get-source-mute"_s : u"get-sink-mute"_s, device})).trimmed();
+        pactl({microphone ? u"get-source-mute"_s : u"get-sink-mute"_s,
+               microphone ? u"@DEFAULT_SOURCE@"_s : u"@DEFAULT_SINK@"_s})).trimmed();
     if (output.isEmpty())
         return {};
+    return output.endsWith(u"yes"_s);  // "Mute: yes"
+}
 
-    const bool muted = output.endsWith(u"yes"_s);  // "Mute: yes"
+TimedCache<optional<bool>> audio_muted_cache{[]{ return fetchMuted(false); }, 3s};
+TimedCache<optional<bool>> microphone_muted_cache{[]{ return fetchMuted(true); }, 3s};
+
+shared_ptr<Item> muteItem(bool microphone)
+{
+    const auto muted_state = (microphone ? microphone_muted_cache : audio_muted_cache).get();
+    if (!muted_state)
+        return {};
+
+    const bool muted = *muted_state;
+    const auto device = microphone ? u"@DEFAULT_SOURCE@"_s : u"@DEFAULT_SINK@"_s;
     const auto name = microphone ? u"Microphone"_s : u"Audio"_s;
     return makeItem(
         microphone ? u"micmute"_s : u"audiomute"_s,
@@ -699,6 +744,7 @@ shared_ptr<Item> muteItem(bool microphone)
                     runDetachedProcess({u"pactl"_s,
                                         microphone ? u"set-source-mute"_s : u"set-sink-mute"_s,
                                         device, u"toggle"_s});
+                    (microphone ? microphone_muted_cache : audio_muted_cache).invalidate();
                 }
             },
             openSettings(u"kcm_pulseaudio"_s)
@@ -716,7 +762,7 @@ struct Output
     int width;      ///< Logical width
 };
 
-vector<Output> outputs()
+vector<Output> fetchOutputs()
 {
     QProcess process;
     process.start(u"kscreen-doctor"_s, {u"--json"_s});
@@ -749,9 +795,14 @@ vector<Output> outputs()
     return outputs;
 }
 
+TimedCache<vector<Output>> outputs_cache{fetchOutputs, 5s};
+
+vector<Output> outputs() { return outputs_cache.get(); }
+
 void kscreenDoctor(const QStringList &args)
 {
     runDetachedProcess(QStringList{u"kscreen-doctor"_s} + args);
+    outputs_cache.invalidate();
 }
 
 shared_ptr<Item> displayModeItem()
@@ -920,6 +971,10 @@ vector<RankItem> QuickSettings::rankItems(QueryContext &ctx)
 {
     vector<RankItem> results;
     const auto enabled = enabled_settings_.load();
+
+    // Fetching the states costs D-Bus calls and processes. Not for every single letter.
+    if (ctx.trigger().isEmpty() && ctx.query().trimmed().size() < 2)
+        return results;
 
     // "brightness 40"
     static const QRegularExpression brightness_re(
