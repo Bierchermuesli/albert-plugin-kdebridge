@@ -1,5 +1,6 @@
 #include "quicksettings.h"
 #include "quicksettings_p.h"
+#include "stepperitem.h"
 #include <QCheckBox>
 #include <QDBusArgument>
 #include <QDBusConnection>
@@ -83,6 +84,8 @@ const vector<SettingInfo> &settingInfos()
          {u"dark"_s, u"light"_s, u"dark mode"_s, u"theme"_s, u"colors"_s}},
         {QuickSettings::AudioOutput, u"audio_output"_s, u"Audio Output"_s,
          {u"audio"_s, u"sound"_s, u"output"_s, u"speaker"_s, u"headphones"_s, u"hdmi"_s}},
+        {QuickSettings::Volume, u"volume"_s, u"Volume"_s,
+         {u"volume"_s, u"loud"_s, u"quiet"_s, u"audio"_s, u"sound"_s}},
         {QuickSettings::AudioMute, u"audio_mute"_s, u"Mute Audio"_s,
          {u"mute"_s, u"audio"_s, u"sound"_s, u"volume"_s}},
         {QuickSettings::MicrophoneMute, u"microphone_mute"_s, u"Mute Microphone"_s,
@@ -364,37 +367,31 @@ shared_ptr<Item> brightnessItem(optional<int> requested = {})
     if (max <= 0)
         return {};
 
-    auto setAction = [&](int percent) {
-        return Action{
-            u"set.%1"_s.arg(percent), u"Set to %1%"_s.arg(percent),
-            [path, iface, value = max * percent / 100]{
-                callAsync(QDBusConnection::sessionBus(), brightness_service, path, iface,
-                          u"SetBrightness"_s, {value, 0u});
-            }
-        };
+    auto apply = [path, iface, max](int percent) {
+        callAsync(QDBusConnection::sessionBus(), brightness_service, path, iface,
+                  u"SetBrightness"_s, {max * percent / 100, 0u});
     };
+    const int current = int(lround(100.0 * brightness / max));
 
-    vector<Action> actions;
     if (requested)
-        actions.push_back(setAction(*requested));
-    for (int percent : {25, 50, 75, 100})
-        if (!requested || percent != *requested)
-            actions.push_back(setAction(percent));
-    actions.push_back(openSettings(u"kcm_powerdevilprofilesconfig"_s));
+        return makeItem(u"brightness.set"_s, u"Set Screen Brightness to %1%"_s.arg(*requested),
+                        u"Current: %1%"_s.arg(current), u"brightness-high"_s,
+                        {{u"set"_s, u"Set to %1%"_s.arg(*requested),
+                          [apply, percent = *requested]{ apply(percent); }}});
 
-    const auto current = u"%1%"_s.arg(lround(100.0 * brightness / max));
-    return makeItem(requested ? u"brightness.set"_s : u"brightness"_s,
-                    requested ? u"Set Screen Brightness to %1%"_s.arg(*requested)
-                              : u"Screen Brightness"_s,
-                    u"Current: %1"_s.arg(current), u"brightness-high"_s, ::move(actions));
+    return make_shared<StepperItem>(
+        u"brightness"_s, u"Screen Brightness"_s, u"brightness-high"_s,
+        StepperItem::Range{current, 1, 100, 10, 1},
+        [](int v){ return u"%1%"_s.arg(v); }, apply,
+        vector<Action>{openSettings(u"kcm_powerdevilprofilesconfig"_s)});
 }
 
 shared_ptr<Item> keyboardBrightnessItem()
 {
     const auto bus = QDBusConnection::sessionBus();
-    const auto max_reply = call(bus, powerdevil_service, keyboard_brightness_path,
-                                keyboard_brightness_iface, u"keyboardBrightnessMax"_s);
-    const auto max = max_reply.arguments().value(0).toInt();
+    const auto max = call(bus, powerdevil_service, keyboard_brightness_path,
+                          keyboard_brightness_iface, u"keyboardBrightnessMax"_s)
+                         .arguments().value(0).toInt();
     if (max <= 0)
         return {};
 
@@ -402,25 +399,15 @@ shared_ptr<Item> keyboardBrightnessItem()
                               keyboard_brightness_iface, u"keyboardBrightness"_s)
                              .arguments().value(0).toInt();
 
-    vector<Action> actions;
-    for (int level = 0; level <= max; ++level)
-    {
-        if (level == current)
-            continue;
-        actions.push_back({
-            u"level.%1"_s.arg(level),
-            level == 0 ? u"Turn off"_s : u"Set to %1%"_s.arg(100 * level / max),
-            [level]{
-                callAsync(QDBusConnection::sessionBus(), powerdevil_service,
-                          keyboard_brightness_path, keyboard_brightness_iface,
-                          u"setKeyboardBrightness"_s, {level});
-            }
+    return make_shared<StepperItem>(
+        u"keyboardbrightness"_s, u"Keyboard Backlight"_s, u"input-keyboard-brightness"_s,
+        StepperItem::Range{current, 0, max, 1, 0},
+        [max](int v){ return v == 0 ? u"off"_s : u"%1 of %2"_s.arg(v).arg(max); },
+        [](int level){
+            callAsync(QDBusConnection::sessionBus(), powerdevil_service,
+                      keyboard_brightness_path, keyboard_brightness_iface,
+                      u"setKeyboardBrightness"_s, {level});
         });
-    }
-
-    return makeItem(u"keyboardbrightness"_s, u"Keyboard Backlight"_s,
-                    current == 0 ? u"Off"_s : u"Current: %1%"_s.arg(100 * current / max),
-                    u"input-keyboard-brightness"_s, ::move(actions));
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -600,7 +587,9 @@ QWidget *QuickSettings::buildConfigWidget()
 likely change, the alternative actions offer the other options. Search by name or keyword, e.g.
 <code>night</code>, <code>dnd</code>, <code>power</code>, <code>wifi</code>, <code>dark</code>,
 <code>mic</code>, <code>headphones</code>, <code>extend</code> or <code>scale</code>.
-Set the brightness directly with <code>brightness 40</code>.</p>
+Brightness and volume are changed in steps, the step actions keep the window open so Enter can
+be pressed repeatedly. Exact values can be typed, e.g. <code>brightness 40</code> or
+<code>volume 30</code>.</p>
 <p>Night light and do not disturb are paused by Albert and resumed when Albert quits.</p>
 )"_s, w);
     label->setWordWrap(true);
@@ -648,6 +637,18 @@ vector<RankItem> QuickSettings::rankItems(QueryContext &ctx)
                 return results;
             }
 
+    // "volume 40"
+    static const QRegularExpression volume_re(uR"(^vol(?:ume)?\s+(\d{1,3})\s*%?$)"_s,
+                                              QRegularExpression::CaseInsensitiveOption);
+    if (enabled & Volume)
+        if (const auto m = volume_re.match(ctx.query().trimmed()); m.hasMatch())
+            if (const auto percent = m.captured(1).toInt(); percent <= 100)
+            {
+                if (auto item = volumeItem(percent))
+                    results.emplace_back(item, 1.0);
+                return results;
+            }
+
     const Matcher matcher(ctx.query());
     for (const auto &info : settingInfos())
     {
@@ -680,6 +681,7 @@ vector<RankItem> QuickSettings::rankItems(QueryContext &ctx)
         case Wifi:               item = wifiItem(); break;
         case Touchpad:           item = touchpadItem(); break;
         case ColorScheme:        item = colorSchemeItem(); break;
+        case Volume:             item = volumeItem(); break;
         case AudioMute:          item = muteItem(false); break;
         case MicrophoneMute:     item = muteItem(true); break;
         case DisplayMode:        item = displayModeItem(); break;

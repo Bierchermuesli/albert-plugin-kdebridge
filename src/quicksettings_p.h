@@ -77,6 +77,8 @@ private:
 std::vector<albert::RankItem> audioOutputItems(const albert::Matcher &matcher,
                                                const QString &query, double score);
 std::shared_ptr<albert::Item> muteItem(bool microphone);
+/// _requested_ is a percentage to set, otherwise the item is a stepper.
+std::shared_ptr<albert::Item> volumeItem(std::optional<int> requested = {});
 
 // quicksettings_display.cpp
 std::shared_ptr<albert::Item> displayModeItem();

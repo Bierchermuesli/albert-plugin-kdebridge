@@ -28,7 +28,8 @@ public:
         DisplayMode        = 1 << 11,
         DisplayScale       = 1 << 12,
         ScreensOff         = 1 << 13,
-        AllSettings        = 0x3FFF
+        Volume             = 1 << 14,
+        AllSettings        = 0x7FFF
     };
 
     QuickSettings();

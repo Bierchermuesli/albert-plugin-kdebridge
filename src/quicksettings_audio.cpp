@@ -1,8 +1,10 @@
 #include "quicksettings_p.h"
+#include "stepperitem.h"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
+#include <QRegularExpression>
 #include <albert/systemutil.h>
 using namespace Qt::StringLiterals;
 using namespace albert;
@@ -156,6 +158,40 @@ shared_ptr<Item> muteItem(bool microphone)
             },
             openSettings(u"kcm_pulseaudio"_s)
         });
+}
+
+// "Volume: front-left: 42598 /  65% / -11.22 dB,   front-right: ..."
+optional<int> fetchVolume()
+{
+    static const QRegularExpression re(uR"((\d+)%)"_s);
+    const auto output = QString::fromUtf8(pactl({u"get-sink-volume"_s, u"@DEFAULT_SINK@"_s}));
+    if (const auto m = re.match(output); m.hasMatch())
+        return m.captured(1).toInt();
+    return {};
+}
+
+shared_ptr<Item> volumeItem(optional<int> requested)
+{
+    const auto current = fetchVolume();
+    if (!current)
+        return {};
+
+    auto apply = [](int percent) {
+        runDetachedProcess({u"pactl"_s, u"set-sink-volume"_s, u"@DEFAULT_SINK@"_s,
+                            u"%1%"_s.arg(percent)});
+    };
+    const auto icon = u"audio-volume-high"_s;
+
+    if (requested)
+        return makeItem(u"volume.set"_s, u"Set Volume to %1%"_s.arg(*requested),
+                        u"Current: %1%"_s.arg(*current), icon,
+                        {{u"set"_s, u"Set to %1%"_s.arg(*requested),
+                          [apply, percent = *requested]{ apply(percent); }}});
+
+    return make_shared<StepperItem>(
+        u"volume"_s, u"Volume"_s, icon, StepperItem::Range{*current, 0, 100, 5, 1},
+        [](int v){ return u"%1%"_s.arg(v); }, apply,
+        vector<Action>{openSettings(u"kcm_pulseaudio"_s)});
 }
 
 }  // namespace qs

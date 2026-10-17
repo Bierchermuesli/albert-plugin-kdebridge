@@ -58,16 +58,19 @@ Trigger `qs `. Shows the current state of Plasma quick settings and changes them
 | Night Light | `night` | pause, resume |
 | Do Not Disturb | `dnd` | turn on, turn off |
 | Power Profile | `power` | switch to balanced, power save, performance |
-| Screen Brightness | `brightness`, `brightness 40` | set to 25, 50, 75, 100 % or the given value |
-| Keyboard Backlight | `keyboard` | off, 50 %, 100 % |
+| Screen Brightness | `brightness`, `brightness 40` | +10, −10, +1, −1 %, or set the typed value |
+| Keyboard Backlight | `keyboard` | one level up or down |
 | Wi-Fi | `wifi` | turn on, turn off |
 | Touchpad | `touchpad` | turn on, turn off |
 | Color Scheme | `dark`, `light` | switch between the schemes |
 | Audio Output | `audio`, `headphones`, `hdmi` | switch to an output that is plugged in |
+| Volume | `volume`, `volume 30` | +5, −5, +1, −1 %, or set the typed value |
 | Mute Audio, Mute Microphone | `mute`, `mic` | mute, unmute |
 | Display Mode | `display`, `extend` | display switcher, extend, external only, laptop only |
 | Display Scale | `scale` | 100 to 200 % per screen |
 | Turn Off Screens | `screen off` | turn off until the next input |
+
+The step actions keep the window open, so Enter can be pressed repeatedly while the value in the subtext follows. Shift+Enter does the same for any other action.
 
 Every setting has an action to open the matching System Settings page and can be disabled in the plugin settings. Night light and do not disturb are paused by Albert and resumed when Albert quits.
 
