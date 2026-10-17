@@ -1,5 +1,3 @@
-// Copyright (c) 2026 Stefan Grosser
-
 #include "quicksettings.h"
 #include <QCheckBox>
 #include <QDBusArgument>

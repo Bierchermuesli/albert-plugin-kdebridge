@@ -1,5 +1,3 @@
-// Copyright (c) 2026 Stefan Grosser
-
 #include "klipper.h"
 #include <QCryptographicHash>
 #include <QDBusConnection>

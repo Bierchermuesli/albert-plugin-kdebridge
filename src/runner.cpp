@@ -1,5 +1,3 @@
-// Copyright (c) 2026 Stefan Grosser
-
 #include "appearance.h"
 #include "kwin.h"
 #include "runner.h"

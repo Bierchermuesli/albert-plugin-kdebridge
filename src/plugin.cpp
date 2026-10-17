@@ -1,5 +1,3 @@
-// Copyright (c) 2026 Stefan Grosser
-
 #include "plugin.h"
 #include "runner.h"
 #include "subpluginloader.h"

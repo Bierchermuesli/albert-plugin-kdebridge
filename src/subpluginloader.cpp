@@ -1,5 +1,3 @@
-// Copyright (c) 2026 Stefan Grosser
-
 #include "subpluginloader.h"
 #include <QTimer>
 #include <albert/plugininstance.h>

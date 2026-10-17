@@ -1,5 +1,3 @@
-// Copyright (c) 2026 Stefan Grosser
-
 #include "systemsettings.h"
 #include <QCoreApplication>
 #include <QDir>

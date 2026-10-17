@@ -1,5 +1,3 @@
-// Copyright (c) 2026 Stefan Grosser
-
 #include "spectacle.h"
 #include <albert/icon.h>
 #include <albert/indexitem.h>
