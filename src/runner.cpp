@@ -220,9 +220,9 @@ Runner::Runner(const RunnerInfo &info, shared_ptr<const Appearance> appearance) 
     match_regex_(info.match_regex),
     cache_dir_(QString::fromStdString(cacheLocation().string()))
 {
-    // Slow runners would stall the global query. Exclude them from it by default. The key is
-    // read by the core, so only set it if the user has not decided yet.
-    if (extension_->traits().slow_for_global_query)
+    // Some runners are too slow or too noisy for the global query. Exclude them by default. The
+    // key is read by the core, so only set it if the user has not decided yet.
+    if (!extension_->traits().global_by_default)
         if (auto s = settings(); !s->contains(u"global_handler_enabled"_s))
             s->setValue(u"global_handler_enabled"_s, false);
 

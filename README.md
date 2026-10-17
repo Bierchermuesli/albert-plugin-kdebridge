@@ -6,6 +6,8 @@ The bridge provides a set of plugins. Each one shows up in the Albert plugin lis
 
 Most of them talk directly to the services that implement the KRunner D-Bus interface (`org.kde.krunner1`), e.g. KWin, the Plasma browser integration or Baloo. KRunner itself is not needed. Any runner found in `krunner/dbusplugins` is picked up automatically, the ones below get extra features.
 
+Each plugin takes part in the global search or is used with its trigger only, that is Albert's usual per-plugin setting. The browser history and the file search are not part of the global search by default, both would flood the results.
+
 Results of the runners show their source in the subtext and as a badge on the icon, e.g. `Tab · github.com`, so a window, a tab and a history entry of the same page are easy to tell apart. Both can be turned off in the bridge settings.
 
 <!-- screenshot: brave.png -->
@@ -36,7 +38,7 @@ Trigger `tabs `. Open tabs of browsers with the Plasma browser integration, with
 
 ## Browser History
 
-Trigger `history `. Searches the browser history via the Plasma browser integration. The history is too slow for the global query and therefore not part of it by default, use the trigger.
+Trigger `history `. Searches the browser history via the Plasma browser integration. Not part of the global search by default, it is too slow and too noisy for it.
 
 - Open
 - Copy URL
@@ -86,7 +88,7 @@ Trigger `shot `. Screenshots and screen recordings with Spectacle: region, windo
 
 ## File Search
 
-Trigger `baloo `. Searches files using Baloo. Requires Baloo file indexing, which Plasma may have disabled. Do not enable this plugin if you use another file indexer or the Albert file plugin, it would only duplicate the results.
+Trigger `baloo `. Searches files using Baloo, not part of the global search by default. Requires Baloo file indexing, which Plasma may have disabled. Do not enable this plugin if you use another file indexer or the Albert file plugin, it would only duplicate the results.
 
 ## Activities
 
@@ -121,8 +123,7 @@ KDE Plasma 6 on Linux, Wayland or X11. Some features need the tools behind them,
 
 ## Todo
 
-- Translations, the texts are not translatable yet
+before going upstream:
+
+- i18n Translations
 - Settings pages as `.ui` files instead of HTML strings
-- Bring browser here relies on the window caption and a fixed delay, mark it as experimental or make the delay configurable
-- Test the display mode actions with external screens
-- Screenshots

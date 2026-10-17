@@ -184,7 +184,7 @@ another file indexer or the Albert file plugin, it would only duplicate results.
 // -------------------------------------------------------------------------------------------------
 
 static RunnerTraits traits(QString label, QString badge, QString trigger,
-                           QString default_action = u"Open"_s, bool slow = false,
+                           QString default_action = u"Open"_s, bool global = true,
                            QString note = {})
 {
     RunnerTraits t;
@@ -192,7 +192,7 @@ static RunnerTraits traits(QString label, QString badge, QString trigger,
     t.source_badge = ::move(badge);
     t.trigger = ::move(trigger);
     t.default_action = ::move(default_action);
-    t.slow_for_global_query = slow;
+    t.global_by_default = global;
     t.metadata_note = ::move(note);
     return t;
 }
@@ -211,13 +211,13 @@ unique_ptr<RunnerExtension> makeRunnerExtension(const RunnerInfo &info, Settings
 
     if (name == u"browserhistory"_s)
         return make_unique<RunnerExtension>(
-            info, traits(u"History"_s, u"view-history"_s, u"history "_s, u"Open"_s, true),
+            info, traits(u"History"_s, u"view-history"_s, u"history "_s, u"Open"_s, false),
             ::move(settings));
 
     if (name == u"baloosearch"_s)
         return make_unique<BalooExtension>(
             info, traits(u"File"_s, u"system-search"_s, u"baloo "_s, u"Open"_s, false,
-                         u"Requires Baloo file indexing."_s),
+                         u"Requires Baloo file indexing."_s),  // not global, floods the results
             ::move(settings));
 
     if (name == u"activities2"_s)

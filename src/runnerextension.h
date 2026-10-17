@@ -27,7 +27,7 @@ struct RunnerTraits
     QString source_badge;   ///< Badge icon of the source
     QString trigger;        ///< Default trigger
     QString default_action = QStringLiteral("Open");  ///< Text of the Run action
-    bool slow_for_global_query = false;  ///< Exceeds the global query timeout
+    bool global_by_default = true;  ///< Part of the global query unless the user decides
     QString metadata_note;  ///< Appended to the plugin description
 };
 
