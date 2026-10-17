@@ -70,7 +70,7 @@ Trigger `qs `. Shows the current state of Plasma quick settings and changes them
 | Display Scale | `scale` | 100 to 200 % per screen |
 | Turn Off Screens | `screen off` | turn off until the next input |
 
-The step actions keep the window open, so Enter can be pressed repeatedly while the value in the subtext follows. Shift+Enter does the same for any other action.
+The step actions keep the window open, so Enter can be pressed repeatedly while the value in the subtext follows.
 
 Every setting has an action to open the matching System Settings page and can be disabled in the plugin settings. Night light and do not disturb are paused by Albert and resumed when Albert quits.
 
