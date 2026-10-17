@@ -8,5 +8,6 @@
         "@Bierchermuesli"
     ],
     "name": "KDE Bridge",
-    "url": "https://github.com/Bierchermuesli/albert-plugin-kdebridge"
+    "url": "https://github.com/Bierchermuesli/albert-plugin-kdebridge",
+    "readme_url": "https://github.com/Bierchermuesli/albert-plugin-kdebridge/blob/main/README.md"
 }

@@ -92,6 +92,37 @@ Trigger `baloo `. Searches files using Baloo. Requires Baloo file indexing, whic
 
 Trigger `activities ` switches between Plasma activities.
 
-## Build
+## Try it
 
-The plugin is built as part of the Albert source tree. Clone it into `plugins/kdebridge` and build Albert as usual. Requires Qt DBus and Widgets.
+Albert loads native plugins from `~/.local/lib/albert/`. The plugin has to be built against the Albert version that is installed. The official Albert packages ship the headers and CMake files needed for that, so the Albert source tree is not required.
+
+Debian/Ubuntu, other distributions need the equivalent Qt 6 development packages:
+
+```
+sudo apt install cmake ninja-build qt6-base-dev qt6-tools-dev qt6-l10n-tools
+git clone https://github.com/Bierchermuesli/albert-plugin-kdebridge
+cd albert-plugin-kdebridge
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+mkdir -p ~/.local/lib/albert && cp build/kdebridge.so ~/.local/lib/albert/
+```
+
+Restart Albert, then enable `KDE Bridge` and the plugins you want in the settings. After an Albert update the plugin has to be rebuilt. To get rid of it, delete the file.
+
+For development the plugin can also be cloned into `plugins/kdebridge` of the Albert source tree and built with Albert.
+
+## Requirements
+
+KDE Plasma 6 on Linux, Wayland or X11. Some features need the tools behind them, the matching results are simply missing otherwise:
+
+- Quick Settings: `pactl` for audio, `kscreen-doctor` for displays, `plasma-apply-colorscheme` for the color scheme
+- Browser tabs and history: the Plasma browser integration extension in the browser
+- File search: Baloo file indexing
+
+## Todo
+
+- Translations, the texts are not translatable yet
+- Settings pages as `.ui` files instead of HTML strings
+- Bring browser here relies on the window caption and a fixed delay, mark it as experimental or make the delay configurable
+- Test the display mode actions with external screens
+- Screenshots
