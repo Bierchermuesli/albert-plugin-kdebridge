@@ -6,6 +6,7 @@
 #include <QJsonObject>
 #include <QLocale>
 #include <QPluginLoader>
+#include <QSettings>
 #include <QSet>
 #include <QStandardPaths>
 #include <QVBoxLayout>
@@ -122,6 +123,14 @@ vector<Kcm> scanKcms()
 }
 
 }  // namespace
+
+SystemSettings::SystemSettings()
+{
+    // Not part of the global query by default. The key is read by the core, so only set it if
+    // the user has not decided yet.
+    if (auto s = settings(); !s->contains(u"global_handler_enabled"_s))
+        s->setValue(u"global_handler_enabled"_s, false);
+}
 
 QString SystemSettings::defaultTrigger() const { return u"settings "_s; }
 

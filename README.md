@@ -6,7 +6,7 @@ The bridge provides a set of plugins. Each one shows up in the Albert plugin lis
 
 Most of them talk directly to the services that implement the KRunner D-Bus interface (`org.kde.krunner1`), e.g. KWin, the Plasma browser integration or Baloo. KRunner itself is not needed. Any runner found in `krunner/dbusplugins` is picked up automatically, the ones below get extra features.
 
-Each plugin takes part in the global search or is used with its trigger only, that is Albert's usual per-plugin setting. The browser history and the file search are not part of the global search by default, both would flood the results.
+Each plugin takes part in the global search or is used with its trigger only, that is Albert's usual per-plugin setting. The browser history, the file search and the system settings are not part of the global search by default, the clipboard is trigger only.
 
 Results of the runners show their source in the subtext and as a badge on the icon, e.g. `Tab · github.com`, so a window, a tab and a history entry of the same page are easy to tell apart. Both can be turned off in the bridge settings.
 
@@ -45,7 +45,7 @@ Trigger `history `. Searches the browser history via the Plasma browser integrat
 
 ## System Settings
 
-Trigger `settings `. Opens the pages of System Settings and Info Center. Searches names and the keywords KDE provides for each page, in your language and in English, e.g. `hdmi`, `resolution` or `brightness` find the display configuration, `cpu` the Info Center page. Pages that are not available on the current platform are hidden.
+Trigger `settings `, not part of the global search by default. Opens the pages of System Settings and Info Center. Searches names and the keywords KDE provides for each page, in your language and in English, e.g. `hdmi`, `resolution` or `brightness` find the display configuration, `cpu` the Info Center page. Pages that are not available on the current platform are hidden.
 
 ## Quick Settings
 
