@@ -10,10 +10,9 @@ Each plugin takes part in the global search or is used with its trigger only, th
 
 Results of the runners show their source in the subtext and as a badge on the icon, e.g. `Tab · example.com`, so a window, a tab and a history entry of the same page are easy to tell apart. Both can be turned off in the bridge settings.
 
-
 ## Windows
 
-Trigger `win `. Find and switch to open windows and virtual desktops, works on Wayland. The window icons come from KWin. May be used as Global search.
+Trigger `win `. Find and switch to open windows and virtual desktops, works on Wayland. The window icons come from KWin. Part of the global search by default.
 
 Actions on a window:
 
@@ -26,13 +25,12 @@ Each action can be disabled in the plugin settings. The actions use KWin scripti
 
 <img width="892" height="543" alt="image" src="https://github.com/user-attachments/assets/93aad0ce-aca9-4ae6-8f7d-c68b6f3a5a47" />
 
-
 ## Browser Tabs
 
-Trigger `tabs `. Open tabs of browsers with the Plasma browser integration, with favicons.  May be used as Global search.
+Trigger `tabs `. Open tabs of browsers with the Plasma browser integration, with favicons. Part of the global search by default.
 
 - Switch to the tab
-- Bring browser here: activates the tab and moves the browser window to the current desktop and screen
+- Bring browser here: activates the tab and moves the browser window to the current desktop and screen. Relies on the window title, so it may pick the wrong window if two have the same title.
 - Copy URL
 - Mute and unmute, for tabs playing audio
 
@@ -68,7 +66,6 @@ Trigger `qs `. Shows the current state of Plasma quick settings and changes them
 | Turn Off Screens | `screen off` | turn off until the next input |
 
 Every setting has an action to open the matching System Settings page and can be disabled in the plugin settings. Night light and do not disturb are paused by Albert and resumed when Albert quits.
-
 
 ## Clipboard
 
@@ -122,7 +119,7 @@ KDE Plasma 6 on Linux, Wayland or X11. Some features need the tools behind them,
 
 ## Todo
 
-before going upstream:
+Before going upstream:
 
 - i18n Translations
 - Settings pages as `.ui` files instead of HTML strings
