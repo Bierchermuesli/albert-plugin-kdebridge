@@ -78,8 +78,9 @@ Every setting has an action to open the matching System Settings page and can be
 
 Trigger `clip `. Searches the clipboard history of Klipper, newest first. All words of the query have to match.
 
-- Paste
+- Paste, needs `xdotool` on X11 or `ydotool` on Wayland
 - Copy
+- Edit and paste, Edit and copy: opens the text in a small editor first
 
 #### Screenshot
 
